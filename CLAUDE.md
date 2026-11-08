@@ -42,4 +42,4 @@ Runtime needs `mpv` and `yt-dlp`. New source files must be added to **both** `dr
 
 ## Release
 
-`.github/workflows/windows.yml` builds `Drift-windows-x64.zip` (Qt 6.8.3 MSVC, windeployqt, bundled mpv.exe/yt-dlp.exe) and the Arch package. Pushing a `v*` tag attaches both to a release. Keep `pkgver` in `pkgbuild/PKGBUILD` and `setApplicationVersion` in `main.cpp` in step with the tag.
+`.github/workflows/windows.yml` builds `Drift-setup-x64.exe` (Inno Setup, `windows/drift.iss`, version from `pkgver`) and `Drift-windows-x64.zip` (Qt 6.8.3 MSVC, windeployqt, bundled mpv.exe/yt-dlp.exe) and the Arch package. Pushing a `v*` tag attaches all three to a release. Keep `pkgver` in `pkgbuild/PKGBUILD` and `setApplicationVersion` in `main.cpp` in step with the tag.
