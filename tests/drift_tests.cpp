@@ -109,6 +109,27 @@ private slots:
         QCOMPARE(backend.queue()[5].id, QString("m4"));
     }
 
+    void playsQueuedTrackAndRebuildsUpNextFromIt()
+    {
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+        Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        const Track seed{"s", "Seed", "A"};
+        backend.setSeeds({seed});
+        backend.addRadio(seed, {{"a", "A", "X"}, {"b", "B", "X"}, {"c", "C", "X"}});
+        backend.playQueued(1);
+        QCOMPARE(backend.current().value("id").toString(), QString("b"));
+        QVERIFY(backend.queue().isEmpty());
+        QTRY_COMPARE(requests, 1); // the mix for "b"
+        // Dropped tracks may come back from another mix; the one playing doesn't.
+        backend.addRadio(seed, {{"a", "A", "X"}, {"b", "B", "X"}});
+        QCOMPARE(backend.queue().size(), 1);
+        QCOMPARE(backend.queue().first().id, QString("a"));
+        backend.playQueued(99);
+        QCOMPARE(backend.current().value("id").toString(), QString("b"));
+    }
+
     void seedsCycleThroughWholePlaylist()
     {
         Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");

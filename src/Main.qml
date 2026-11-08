@@ -306,8 +306,15 @@ ApplicationWindow {
 
                 delegate: Item {
                     required property var modelData
+                    required property int index
                     width: ListView.view.width
                     height: 36
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.playQueued(index)
+                    }
 
                     RowLayout {
                         anchors.fill: parent

@@ -60,6 +60,8 @@ public:
     Q_INVOKABLE void playSimilar(int index);
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void next();
+    // Plays this track from Up next now and rebuilds Up next from its radio.
+    Q_INVOKABLE void playQueued(int index);
     Q_INVOKABLE void seek(int seconds);
     Q_INVOKABLE void seekTo(int seconds);
     Q_INVOKABLE void changeVolume(int delta);
@@ -92,6 +94,8 @@ private:
     void mixLoaded();
     void reset();
     void refill();
+    void fetchMix(const Track &seed);
+    void abortMix();
     void queueChanged();
     void playNext();
     void resolveNext();

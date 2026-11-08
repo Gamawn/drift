@@ -301,12 +301,7 @@ void Backend::reset() {
         m_fetch.kill();
         m_fetch.waitForFinished(1000);
     }
-    if (m_mixReply) {
-        m_mixReply->disconnect(this);
-        m_mixReply->abort();
-        m_mixReply->deleteLater();
-        m_mixReply = nullptr;
-    }
+    abortMix();
     m_seeds.clear();
     m_queue.clear();
     m_seen.clear();
@@ -428,10 +423,7 @@ void Backend::refill() {
     if (m_seeds.isEmpty() || m_mixReply || m_queue.size() >= kLowWater)
         return;
     const Track seed = m_chain ? m_chainSeed : nextSeed();
-    m_mixSeed = seed;
-    m_mixReply = m_network.post(musicRequest("next"),
-                                musicBody({{"videoId", seed.id}, {"playlistId", "RDAMVM" + seed.id}, {"isAudioOnly", true}}));
-    connect(m_mixReply, &QNetworkReply::finished, this, &Backend::mixLoaded);
+    fetchMix(seed);
     if (!m_seen.contains(songKey(seed))) {
         m_seen.insert(songKey(seed));
         m_queue.append(seed);
@@ -517,6 +509,38 @@ void Backend::next() {
     setError({});
     if (!m_seeds.isEmpty())
         playNext();
+}
+
+void Backend::fetchMix(const Track &seed) {
+    m_mixSeed = seed;
+    m_mixReply = m_network.post(musicRequest("next"),
+                                musicBody({{"videoId", seed.id}, {"playlistId", "RDAMVM" + seed.id}, {"isAudioOnly", true}}));
+    connect(m_mixReply, &QNetworkReply::finished, this, &Backend::mixLoaded);
+}
+
+void Backend::abortMix() {
+    if (!m_mixReply)
+        return;
+    m_mixReply->disconnect(this);
+    m_mixReply->abort();
+    m_mixReply->deleteLater();
+    m_mixReply = nullptr;
+}
+
+void Backend::playQueued(int index) {
+    if (index < 0 || index >= m_queue.size())
+        return;
+    const Track track = m_queue.takeAt(index);
+    // The tracks it replaces were never heard, so other mixes may bring them back.
+    for (const auto &dropped : std::as_const(m_queue))
+        m_seen.remove(songKey(dropped));
+    m_queue = {track};
+    // Its own mix comes next; a playlist's seeds take over after it, a song's radio goes on from it.
+    abortMix();
+    fetchMix(track);
+    if (m_chain)
+        m_chainSeed = track;
+    next();
 }
 
 void Backend::seek(int seconds) {
