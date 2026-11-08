@@ -5,5 +5,5 @@ TEMPLATE = app
 
 INCLUDEPATH += ../src
 
-HEADERS += ../src/backend.h ../src/mpv.h ../src/theme.h ../src/translator.h
+HEADERS += ../src/backend.h ../src/mpv.h ../src/process.h ../src/theme.h ../src/translator.h
 SOURCES += drift_tests.cpp ../src/backend.cpp ../src/mpv.cpp ../src/theme.cpp ../src/translator.cpp

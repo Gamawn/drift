@@ -24,8 +24,14 @@ Translator::Translator(const QString &languageFile, const QString &catalogDirect
 // One registry code on the first line; anything else, or no file, is English.
 QString Translator::readLanguage(const QString &path) {
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
+    if (!file.open(QIODevice::ReadOnly)) {
+#ifdef Q_OS_WIN
+        // Windows has no Omarchy language setting; follow the system's language.
+        return QLocale::system().name().section('_', 0, 0);
+#else
         return "en";
+#endif
+    }
     const QString code = QString::fromUtf8(file.readLine()).trimmed();
     static const QRegularExpression valid("^[a-z]{2,3}(-[A-Za-z]{2})?$");
     return valid.match(code).hasMatch() ? code : "en";

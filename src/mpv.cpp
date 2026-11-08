@@ -1,4 +1,5 @@
 #include "mpv.h"
+#include "process.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -8,10 +9,16 @@
 #include <QStandardPaths>
 
 Mpv::Mpv(const QString &program, QObject *parent) : QObject(parent), m_program(program) {
+#ifdef Q_OS_WIN
+    // mpv on Windows listens on a named pipe, which QLocalSocket reaches by the same path.
+    m_socketPath = QString("\\\\.\\pipe\\drift-mpv-%1").arg(QCoreApplication::applicationPid());
+#else
     QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (runtime.isEmpty())
         runtime = QDir::tempPath();
     m_socketPath = QString("%1/drift-mpv-%2.sock").arg(runtime).arg(QCoreApplication::applicationPid());
+#endif
+    hideConsole(m_process);
 
     m_retry.setInterval(50);
     connect(&m_retry, &QTimer::timeout, this, &Mpv::connectSocket);
@@ -47,11 +54,15 @@ Mpv::~Mpv() {
         m_process.kill();
         m_process.waitForFinished(1000);
     }
+#ifndef Q_OS_WIN
     QFile::remove(m_socketPath);
+#endif
 }
 
 void Mpv::start() {
+#ifndef Q_OS_WIN
     QFile::remove(m_socketPath);
+#endif
     m_process.start(m_program, {
         "--idle=yes", "--no-video", "--force-window=no", "--audio-display=no", "--no-terminal",
         "--ytdl-format=bestaudio/best",

@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "process.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -87,6 +88,8 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
     m_playlistUrl = settings.value("playlistUrl").toString();
     m_volume = std::clamp(settings.value("volume", 80).toInt(), 0, 100);
     m_mpv.command({"set_property", "volume", m_volume});
+    hideConsole(m_fetch);
+    hideConsole(m_resolve);
 
     connect(&m_fetch, &QProcess::finished, this, &Backend::playlistLoaded);
     connect(&m_fetch, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {

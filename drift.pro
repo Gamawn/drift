@@ -7,6 +7,7 @@ TEMPLATE = app
 HEADERS += \
     src/backend.h \
     src/mpv.h \
+    src/process.h \
     src/theme.h \
     src/translator.h
 
@@ -18,3 +19,8 @@ SOURCES += \
     src/translator.cpp
 
 RESOURCES += src/resources.qrc
+
+win32 {
+    CONFIG += windows
+    RC_ICONS = pkgbuild/drift.ico
+}

@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include "backend.h"
+#include "process.h"
 #include "theme.h"
 #include "translator.h"
 
@@ -30,7 +31,7 @@ int main(int argc, char *argv[]) {
     app.installTranslator(&translator);
 
     Theme theme;
-    Backend backend;
+    Backend backend(findTool("yt-dlp"), findTool("mpv"));
 
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);

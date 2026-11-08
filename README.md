@@ -37,3 +37,14 @@ bin/install    # makepkg -fsi, adds Drift to the app launcher
 ```
 
 Needs `mpv` and `yt-dlp`. The playlist must be public or unlisted.
+
+## Windows
+
+The `Windows` GitHub Actions workflow builds `Drift-windows-x64.zip`, with
+`mpv.exe` and `yt-dlp.exe` bundled beside `drift.exe`. Run it from the
+Actions tab, or push a `v*` tag to attach the zip to a release. Unzip it
+anywhere and start `drift.exe`; it follows the Windows display language.
+
+To build by hand: Qt 6.8 for MSVC, then `qmake CONFIG-=debug_and_release
+drift.pro && nmake`, `windeployqt --qmldir src drift.exe`, and put `mpv.exe`
+and `yt-dlp.exe` in the same folder (or on `PATH`).
