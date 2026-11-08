@@ -23,6 +23,10 @@ RESOURCES += src/resources.qrc
 win32 {
     CONFIG += windows
     RC_ICONS = pkgbuild/drift.ico
+    # Media keys and the media flyout; C++/WinRT ships with the Windows SDK.
+    HEADERS += src/smtc.h
+    SOURCES += src/smtc.cpp
+    LIBS += -lwindowsapp
 }
 
 # MPRIS: media keys and Omarchy's bar. Windows gets its own media controls separately.

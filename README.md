@@ -36,6 +36,7 @@ Closing the window with nothing playing quits too.
 
 On Linux Drift is an MPRIS player, so the keyboard's media keys, `playerctl`,
 and Omarchy's media bar widget play, pause, and skip without switching to it.
+On Windows the media keys and the media flyout do the same.
 
 ## Build
 

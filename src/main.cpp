@@ -18,6 +18,9 @@
 #include "mpris.h"
 #endif
 #include "process.h"
+#ifdef Q_OS_WIN
+#include "smtc.h"
+#endif
 #include "theme.h"
 #include "translator.h"
 
@@ -105,6 +108,9 @@ int main(int argc, char *argv[]) {
     });
 #ifdef Q_OS_LINUX
     Mpris mpris(&backend, show, [] { QCoreApplication::quit(); });
+#endif
+#ifdef Q_OS_WIN
+    Smtc smtc(&backend);
 #endif
 
     show();
