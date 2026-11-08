@@ -7,3 +7,10 @@ INCLUDEPATH += ../src
 
 HEADERS += ../src/backend.h ../src/mpv.h ../src/process.h ../src/theme.h ../src/translator.h
 SOURCES += drift_tests.cpp ../src/backend.cpp ../src/mpv.cpp ../src/theme.cpp ../src/translator.cpp
+
+# MPRIS: media keys and Omarchy's bar. Windows gets its own media controls separately.
+linux {
+    QT += dbus
+    HEADERS += ../src/mpris.h
+    SOURCES += ../src/mpris.cpp
+}

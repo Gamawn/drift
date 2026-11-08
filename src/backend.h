@@ -65,6 +65,7 @@ public:
     Q_INVOKABLE void seek(int seconds);
     Q_INVOKABLE void seekTo(int seconds);
     Q_INVOKABLE void changeVolume(int delta);
+    void setVolume(int volume);
 
     // The radio's queue, public so tests can drive it without the network.
     static QList<Track> parseEntries(const QByteArray &json);
