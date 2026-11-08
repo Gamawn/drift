@@ -1,6 +1,6 @@
 # Builds a portable Windows zip: drift.exe, the Qt it needs, and the mpv and
 # yt-dlp it drives, side by side so nothing else has to be installed.
-name: Windows
+name: Release
 
 on:
   push:
@@ -60,3 +60,29 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Drift-windows-x64.zip
+
+  # The Arch package, the same one bin/install builds, for Omarchy machines.
+  arch:
+    needs: build
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build package
+        run: |
+          pacman -Syu --noconfirm --needed qt6-base qt6-declarative
+          useradd -m builder
+          chown -R builder .
+          # makepkg refuses to run as root; runtime depends (mpv, yt-dlp) aren't needed to build.
+          su builder -c 'cd pkgbuild && makepkg -f --nodeps --noconfirm'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drift-arch-x86_64
+          path: pkgbuild/drift-[0-9]*.pkg.tar.zst
+
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkgbuild/drift-[0-9]*.pkg.tar.zst
