@@ -55,7 +55,21 @@ jobs:
           New-Item -ItemType Directory $dist | Out-Null
           $exe = Get-ChildItem build -Recurse -Filter drift.exe | Select-Object -First 1
           Copy-Item $exe.FullName $dist
-          windeployqt --release --no-translations --qmldir src "$dist/drift.exe"
+          # Drift draws with the software renderer, so no GPU shader compilers or software OpenGL.
+          windeployqt --release --no-translations --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --qmldir src "$dist/drift.exe"
+          # windeployqt ships every Controls style; Drift only uses Material, built on Basic.
+          Remove-Item -Recurse "$dist/qmltooling", "$dist/qml/QtQuick/NativeStyle"
+          'FluentWinUI3', 'Fusion', 'Imagine', 'Universal', 'Windows' | ForEach-Object {
+            Remove-Item -Recurse "$dist/qml/QtQuick/Controls/$_", "$dist/Qt6QuickControls2$_*.dll"
+          }
+
+          # Main.qml failing to load (a missing module) makes drift.exe exit with 1 right away.
+          $env:QT_FORCE_STDERR_LOGGING = 1
+          $p = Start-Process "$dist/drift.exe" -PassThru -RedirectStandardError drift.log
+          Start-Sleep 5
+          Get-Content drift.log
+          if ($p.HasExited) { exit 1 }
+          Stop-Process $p
 
           Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$dist/yt-dlp.exe"
           gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-x86_64-2*.7z' --dir mpv

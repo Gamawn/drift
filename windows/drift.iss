@@ -25,8 +25,6 @@ OutputDir=..
 OutputBaseFilename=Drift-setup-x64
 Compression=lzma2
 SolidCompression=yes
-; The CI runner has two cores; one thread made compression the slowest step.
-LZMANumBlockThreads=2
 WizardStyle=modern
 ; Drift may be playing in the background with its window closed.
 CloseApplications=force
