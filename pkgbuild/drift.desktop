@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Drift
+Comment=Endless YouTube Music radio from one of your playlists
+Comment[ru]=Бесконечное радио YouTube Music по вашему плейлисту
+Exec=drift
+Icon=drift
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=drift
