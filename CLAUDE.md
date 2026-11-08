@@ -22,7 +22,7 @@ Runtime needs `mpv` and `yt-dlp`. New source files must be added to **both** `dr
 
 ## Architecture
 
-`main.cpp` creates three objects and exposes them to `Main.qml` as context properties: `backend`, `theme`, `translator`. All UI is in `src/Main.qml`.
+`main.cpp` creates three objects and exposes them to `Main.qml` as context properties: `backend`, `theme`, `translator`. All UI is in `src/Main.qml`. Only one Drift runs: a `QLocalServer` named `drift-$USER` takes a second launch's connection as "show the window". Closing the window while a track is loaded deletes the QML engine (and `malloc_trim`s) but keeps `Backend` and mpv playing; `show()` rebuilds the engine.
 
 - **Backend** (`backend.cpp`): the radio queue and all networking.
   - Playlist entries come from `yt-dlp --flat-playlist -J` (`m_fetch`).
@@ -32,6 +32,7 @@ Runtime needs `mpv` and `yt-dlp`. New source files must be added to **both** `dr
   - The parse and queue functions (`parseEntries`, `parseRadio`, `parseSearch`, `setSeeds`, `nextSeed`, `addRadio`) are public statics or methods, so tests drive them with JSON fixtures and no network.
   - State is kept with QSettings, so tests call `QStandardPaths::setTestModeEnabled(true)`.
 - **Mpv** (`mpv.cpp`): a separate `mpv --idle` process controlled over its JSON IPC socket. It starts lazily on the first load and runs with video off and a small demuxer cache (keeping the app around 200 MB is a stated goal). Commands sent before the socket connects are queued in `m_pending`.
+- **Mpris** (`mpris.cpp`, Linux only, QtDBus): `org.mpris.MediaPlayer2.drift` with the root and Player interfaces, driving `Backend`. Media keys and Omarchy's bar go through it. `PropertiesChanged` is sent by hand from `Backend` signals; position isn't announced per tick, only `Seeked` on jumps.
 - **process.h**: `findTool` prefers a binary next to `drift.exe` (the Windows bundle) over PATH. `hideConsole` must be applied to every QProcess so Windows doesn't flash a console.
 - **Theme** follows Omarchy: the accent comes from `~/.local/state/omarchy/current`, watched with QFileSystemWatcher, and window rounding from `hyprctl -j getoption decoration:rounding`.
 - **Translator** is a custom QTranslator that reads flat JSON catalogs in `src/i18n/<omarchy-lang>.json` (English source text → translation; plural strings map to CLDR-category objects). The language comes from `~/.config/omarchy/language` (system locale on Windows). Changing it calls `engine.retranslate()`, so keep plain `qsTr()` in QML and `tr()` in C++, and add new strings to every catalog (`en.json`, `ru.json`).

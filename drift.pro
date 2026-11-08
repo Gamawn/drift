@@ -24,3 +24,10 @@ win32 {
     CONFIG += windows
     RC_ICONS = pkgbuild/drift.ico
 }
+
+# MPRIS: media keys and Omarchy's bar. Windows gets its own media controls separately.
+linux {
+    QT += dbus
+    HEADERS += src/mpris.h
+    SOURCES += src/mpris.cpp
+}

@@ -12,6 +12,12 @@
 #include <QtTest>
 
 #include "backend.h"
+#ifdef Q_OS_LINUX
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusReply>
+#include "mpris.h"
+#endif
 #include "theme.h"
 #include "translator.h"
 
@@ -129,6 +135,45 @@ private slots:
         backend.playQueued(99);
         QCOMPARE(backend.current().value("id").toString(), QString("b"));
     }
+
+#ifdef Q_OS_LINUX
+    void mprisControlsTheRadio()
+    {
+        if (!QDBusConnection::sessionBus().isConnected())
+            QSKIP("needs a D-Bus session bus");
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+        Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        int raised = 0;
+        const QString service = QString("org.mpris.MediaPlayer2.drift_test%1").arg(QCoreApplication::applicationPid());
+        Mpris mpris(&backend, [&raised] { ++raised; }, [] {}, service);
+
+        const QString path = "/org/mpris/MediaPlayer2", player = "org.mpris.MediaPlayer2.Player";
+        auto get = [&](const QString &interface, const QString &name) {
+            QDBusInterface properties(service, path, "org.freedesktop.DBus.Properties");
+            return QDBusReply<QDBusVariant>(properties.call("Get", interface, name)).value().variant();
+        };
+        auto metadata = [&] { return qdbus_cast<QVariantMap>(get(player, "Metadata").value<QDBusArgument>()); };
+        QCOMPARE(get("org.mpris.MediaPlayer2", "Identity").toString(), QString("Drift"));
+        QCOMPARE(get(player, "PlaybackStatus").toString(), QString("Stopped"));
+
+        const Track seed{"s", "Seed", "A"};
+        backend.setSeeds({seed});
+        backend.addRadio(seed, {{"a-1", "Song A", "X"}, {"b", "Song B", "Y"}});
+        QDBusInterface(service, path, player).call("Play");
+        QCOMPARE(get(player, "PlaybackStatus").toString(), QString("Playing"));
+        QCOMPARE(metadata().value("xesam:title").toString(), QString("Song A"));
+        QCOMPARE(metadata().value("mpris:trackid").value<QDBusObjectPath>().path(), QString("/org/drift/track/a_1"));
+
+        QDBusInterface(service, path, player).call("Next");
+        QCOMPARE(metadata().value("xesam:title").toString(), QString("Song B"));
+        QVERIFY(QDBusInterface(service, path, player).setProperty("Volume", 0.3));
+        QCOMPARE(backend.volume(), 30);
+        QDBusInterface(service, path, "org.mpris.MediaPlayer2").call("Raise");
+        QCOMPARE(raised, 1);
+    }
+#endif
 
     void seedsCycleThroughWholePlaylist()
     {

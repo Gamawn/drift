@@ -553,8 +553,10 @@ void Backend::seekTo(int seconds) {
         m_mpv.command({"seek", seconds, "absolute"});
 }
 
-void Backend::changeVolume(int delta) {
-    const int volume = std::clamp(m_volume + delta, 0, 100);
+void Backend::changeVolume(int delta) { setVolume(m_volume + delta); }
+
+void Backend::setVolume(int target) {
+    const int volume = std::clamp(target, 0, 100);
     if (volume == m_volume)
         return;
     m_volume = volume;

@@ -28,6 +28,15 @@ reads the playlist, so the whole thing stays around 200 MB.
 | ? | Show shortcuts |
 | Q | Quit |
 
+## In the background
+
+Close the window while music plays and Drift keeps playing with its window
+and interface unloaded; launch it again to bring the window back. Q quits.
+Closing the window with nothing playing quits too.
+
+On Linux Drift is an MPRIS player, so the keyboard's media keys, `playerctl`,
+and Omarchy's media bar widget play, pause, and skip without switching to it.
+
 ## Build
 
 ```sh

@@ -3,13 +3,20 @@
 #include <QFont>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QTimer>
 #include <QUrl>
 
 #include "backend.h"
+#ifdef Q_OS_LINUX
+#include <malloc.h>
+#include "mpris.h"
+#endif
 #include "process.h"
 #include "theme.h"
 #include "translator.h"
@@ -34,6 +41,17 @@ int main(int argc, char *argv[]) {
     app.setDesktopFileName("drift");
     app.setWindowIcon(QIcon::fromTheme("drift"));
 
+    // One Drift at a time: launching it again only brings the running one's window back.
+    const QString instance = "drift-" + qEnvironmentVariable("USER", qEnvironmentVariable("USERNAME"));
+    QLocalSocket running;
+    running.connectToServer(instance);
+    if (running.waitForConnected(500))
+        return 0;
+    QLocalServer::removeServer(instance); // left behind if Drift crashed
+    QLocalServer server;
+    server.setSocketOptions(QLocalServer::UserAccessOption);
+    server.listen(instance);
+
     QQuickStyle::setStyle("Material");
     // The UI is a few rectangles and text redrawn once a second; drawing it on the CPU
     // skips the GPU driver and its render thread, which halves drift's own memory.
@@ -47,14 +65,52 @@ int main(int argc, char *argv[]) {
     Theme theme;
     Backend backend(findTool("yt-dlp"), findTool("mpv"));
 
-    QQmlApplicationEngine engine;
-    QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
-    engine.rootContext()->setContextProperty("translator", &translator);
-    engine.rootContext()->setContextProperty("theme", &theme);
-    engine.rootContext()->setContextProperty("backend", &backend);
-    engine.load(QUrl("qrc:/Main.qml"));
-    if (engine.rootObjects().isEmpty())
-        return 1;
+    // Closing the window while music plays keeps it playing in the background;
+    // the window and its QML engine are freed and built again when shown.
+    app.setQuitOnLastWindowClosed(false);
+    QQmlApplicationEngine *engine = nullptr;
+    auto window = [&] { return engine ? qobject_cast<QWindow *>(engine->rootObjects().value(0)) : nullptr; };
+    auto show = [&] {
+        if (QWindow *existing = window()) {
+            existing->show();
+            existing->raise();
+            existing->requestActivate();
+            return;
+        }
+        delete engine;
+        engine = new QQmlApplicationEngine;
+        QObject::connect(&translator, &Translator::changed, engine, &QQmlEngine::retranslate);
+        engine->rootContext()->setContextProperty("translator", &translator);
+        engine->rootContext()->setContextProperty("theme", &theme);
+        engine->rootContext()->setContextProperty("backend", &backend);
+        engine->load(QUrl("qrc:/Main.qml"));
+        if (QWindow *created = window())
+            QObject::connect(created, &QWindow::visibleChanged, engine, [&](bool visible) {
+                if (visible || !engine)
+                    return;
+                if (backend.current().isEmpty())
+                    QCoreApplication::quit();
+                else
+                    std::exchange(engine, nullptr)->deleteLater();
+#ifdef Q_OS_LINUX
+                // glibc keeps freed memory for reuse; hand the UI's back to the system.
+                QTimer::singleShot(0, [] { malloc_trim(0); });
+#endif
+            });
+    };
+    QObject::connect(&server, &QLocalServer::newConnection, [&] {
+        while (QLocalSocket *other = server.nextPendingConnection())
+            other->deleteLater();
+        show();
+    });
+#ifdef Q_OS_LINUX
+    Mpris mpris(&backend, show, [] { QCoreApplication::quit(); });
+#endif
 
-    return app.exec();
+    show();
+    if (!window())
+        return 1;
+    const int code = app.exec();
+    delete std::exchange(engine, nullptr);
+    return code;
 }
