@@ -23,7 +23,10 @@ RESOURCES += src/resources.qrc
 win32 {
     CONFIG += windows
     RC_ICONS = pkgbuild/drift.ico
-    # Media keys and the media flyout; C++/WinRT ships with the Windows SDK.
+    # Media keys and the media flyout; C++/WinRT ships with the Windows SDK and
+    # needs C++20, as MSVC refuses the experimental coroutines it uses under C++17.
+    CONFIG -= c++17
+    CONFIG += c++20
     HEADERS += src/smtc.h
     SOURCES += src/smtc.cpp
     LIBS += -lwindowsapp
