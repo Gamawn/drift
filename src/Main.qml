@@ -18,17 +18,34 @@ ApplicationWindow {
     Material.roundedScale: theme.radius
 
     property bool helpVisible: false
-    // Single-key shortcuts step aside while a link is being typed.
-    readonly property bool keys: !urlField.activeFocus
+    // Single-key shortcuts step aside while typing or picking a result.
+    readonly property bool keys: !urlField.activeFocus && !resultsView.activeFocus
+    readonly property bool searching: backend.results.length > 0
 
     function clock(seconds) {
         const s = Math.max(0, Math.floor(seconds))
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    function startRadio() {
-        backend.start(urlField.text)
+    function submit() {
+        if (backend.isLink(urlField.text))
+            content.forceActiveFocus()
+        backend.submit(urlField.text)
+    }
+
+    function playResult(index) {
+        backend.playSimilar(index)
         content.forceActiveFocus()
+    }
+
+    Connections {
+        target: backend
+        function onResultsChanged() {
+            if (backend.results.length > 0) {
+                resultsView.currentIndex = 0
+                resultsView.forceActiveFocus()
+            }
+        }
     }
 
     Shortcut { sequence: "?"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: win.helpVisible = !win.helpVisible }
@@ -43,7 +60,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        onActivated: win.helpVisible ? win.helpVisible = false : content.forceActiveFocus()
+        onActivated: {
+            if (win.helpVisible)
+                win.helpVisible = false
+            else if (win.searching && !urlField.activeFocus)
+                backend.clearResults()
+            content.forceActiveFocus()
+        }
     }
 
     // Right-to-left languages mirror the window; the Translator sets the
@@ -67,19 +90,20 @@ ApplicationWindow {
                 TextField {
                     id: urlField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("YouTube Music playlist link")
+                    placeholderText: qsTr("Playlist link or song search")
                     selectByMouse: true
                     Component.onCompleted: text = backend.playlistUrl
-                    onAccepted: win.startRadio()
+                    onAccepted: win.submit()
+                    Keys.onDownPressed: if (win.searching) resultsView.forceActiveFocus()
                 }
                 Button {
-                    text: qsTr("Start radio")
+                    text: backend.isLink(urlField.text) ? qsTr("Start radio") : qsTr("Search")
                     Material.background: theme.accent
                     Material.foreground: theme.accentForeground
                     focusPolicy: Qt.NoFocus
                     Material.roundedScale: theme.radius
                     enabled: urlField.text.trim().length > 0
-                    onClicked: win.startRadio()
+                    onClicked: win.submit()
                 }
             }
 
@@ -124,7 +148,7 @@ ApplicationWindow {
                     }
                     Label {
                         Layout.fillWidth: true
-                        text: backend.current.title || qsTr("Paste a playlist link and press Enter")
+                        text: backend.current.title || qsTr("Paste a playlist link or search for a song")
                         font.pixelSize: 22
                         font.weight: Font.DemiBold
                         wrapMode: Text.Wrap
@@ -211,13 +235,69 @@ ApplicationWindow {
             }
 
             Label {
-                visible: backend.upcoming.length > 0
+                visible: win.searching
+                text: qsTr("Pick a song to play endless radio like it")
+                font.pixelSize: 13
+                opacity: 0.6
+            }
+
+            ListView {
+                id: resultsView
+                visible: win.searching
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: backend.results
+                boundsBehavior: Flickable.StopAtBounds
+                highlightMoveDuration: 0
+                highlight: Rectangle {
+                    color: "#1c1c20"
+                    radius: Math.min(4, theme.radius)
+                }
+                Keys.onReturnPressed: win.playResult(currentIndex)
+                Keys.onEnterPressed: win.playResult(currentIndex)
+                Keys.onUpPressed: currentIndex > 0 ? decrementCurrentIndex() : urlField.forceActiveFocus()
+
+                delegate: Item {
+                    required property var modelData
+                    required property int index
+                    width: ListView.view.width
+                    height: 40
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: win.playResult(index)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 12
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: modelData.title + "  ·  " + modelData.artist
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            text: modelData.duration ? win.clock(modelData.duration) : ""
+                            opacity: 0.5
+                            font.features: { "tnum": 1 }
+                        }
+                    }
+                }
+            }
+
+            Label {
+                visible: !win.searching && backend.upcoming.length > 0
                 text: qsTr("Up next")
                 font.pixelSize: 13
                 opacity: 0.6
             }
 
             ListView {
+                visible: !win.searching
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -283,7 +363,9 @@ ApplicationWindow {
                             ["N", qsTr("Next track")],
                             ["← →", qsTr("Seek 10 seconds")],
                             ["↑ ↓", qsTr("Volume")],
-                            ["Ctrl+L", qsTr("Change playlist")],
+                            ["Ctrl+L", qsTr("Search or change playlist")],
+                            ["Enter", qsTr("Search, or play the picked song")],
+                            ["Esc", qsTr("Close search results")],
                             ["?", qsTr("Show shortcuts")],
                             ["Q", qsTr("Quit")]
                         ]

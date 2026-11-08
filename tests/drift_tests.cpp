@@ -28,6 +28,7 @@ private slots:
         ]})json");
         QCOMPARE(tracks.size(), 2);
         QCOMPARE(tracks[0].artist, QString("Band"));
+        QVERIFY(tracks[0].fromPlaylist);
         QCOMPARE(tracks[0].duration, 200.0);
         QCOMPARE(tracks[1].artist, QString("Other"));
     }
@@ -46,6 +47,30 @@ private slots:
         QCOMPARE(tracks[0].title, QString("Waka Waka"));
         QCOMPARE(tracks[0].artist, QString("Shakira"));
         QCOMPARE(tracks[0].duration, 211.0);
+    }
+
+    void parsesYouTubeMusicSearch()
+    {
+        const auto tracks = Backend::parseSearch(R"json({"contents": [
+            {"musicResponsiveListItemRenderer": {"playlistItemData": {"videoId": "xtxjm7ciwmc"}, "flexColumns": [
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Группа крови"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Кино"}, {"text": " • "}, {"text": "Группа крови"}, {"text": " • "}, {"text": "4:45"}]}}}
+            ]}},
+            {"musicResponsiveListItemRenderer": {"flexColumns": []}}
+        ]})json");
+        QCOMPARE(tracks.size(), 1);
+        QCOMPARE(tracks[0].id, QString("xtxjm7ciwmc"));
+        QCOMPARE(tracks[0].title, QString("Группа крови"));
+        QCOMPARE(tracks[0].artist, QString("Кино"));
+        QCOMPARE(tracks[0].duration, 285.0);
+        QVERIFY(!tracks[0].fromPlaylist);
+    }
+
+    void tellsLinksFromSearches()
+    {
+        QVERIFY(Backend::isLink(" https://music.youtube.com/playlist?list=PLx "));
+        QVERIFY(Backend::isLink("music.youtube.com/playlist?list=PLx"));
+        QVERIFY(!Backend::isLink("кино группа крови"));
     }
 
     void songKeyIgnoresUploadVariants()
@@ -83,7 +108,6 @@ private slots:
         QSet<QString> firstPass, secondPass;
         for (int i = 0; i < 6; ++i) {
             const Track seed = backend.nextSeed();
-            QVERIFY(seed.fromPlaylist);
             firstPass.insert(seed.id);
         }
         for (int i = 0; i < 6; ++i)

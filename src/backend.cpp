@@ -15,27 +15,30 @@ namespace {
 constexpr int kLowWater = 5;
 // Related tracks taken from each playlist song's mix before the next song.
 constexpr int kRadioPerSeed = 5;
+// A song's radio hops from mix to mix; this many tracks from each mix before
+// hopping keeps it close to the song it started from.
+constexpr int kChainPerSeed = 10;
 // Consecutive failed mix lookups before the radio stops and says so.
 constexpr int kMaxFailures = 3;
 
 QString watchUrl(const QString &id) { return "https://www.youtube.com/watch?v=" + id; }
 
-// YouTube Music's own radio for a song. yt-dlp only reaches YouTube's mixes,
-// which drift into lyric videos and memes; YouTube Music's stays on songs.
-// The client version is any recent web one; the endpoint checks only its shape.
-QNetworkRequest radioRequest() {
-    QNetworkRequest request(QUrl("https://music.youtube.com/youtubei/v1/next?prettyPrint=false"));
+// YouTube Music's own API, for radio and search. yt-dlp only reaches
+// YouTube's mixes and search, which drift into lyric videos and memes;
+// YouTube Music's stay on songs. The client version is any recent web one;
+// the endpoint checks only its shape.
+QNetworkRequest musicRequest(const QString &endpoint) {
+    QNetworkRequest request(QUrl("https://music.youtube.com/youtubei/v1/" + endpoint + "?prettyPrint=false"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Origin", "https://music.youtube.com");
     request.setTransferTimeout(15000);
     return request;
 }
 
-QByteArray radioBody(const QString &id) {
+QByteArray musicBody(QJsonObject body) {
     const QJsonObject client{{"clientName", "WEB_REMIX"}, {"clientVersion", "1.20250101.01.00"}, {"hl", "en"}};
-    return QJsonDocument(QJsonObject{{"context", QJsonObject{{"client", client}}}, {"videoId", id},
-                                     {"playlistId", "RDAMVM" + id}, {"isAudioOnly", true}})
-        .toJson(QJsonDocument::Compact);
+    body.insert("context", QJsonObject{{"client", client}});
+    return QJsonDocument(body).toJson(QJsonDocument::Compact);
 }
 
 QString runs(const QJsonValue &text) {
@@ -45,18 +48,25 @@ QString runs(const QJsonValue &text) {
     return joined;
 }
 
-void collectRenderers(const QJsonValue &value, QList<QJsonObject> &found) {
+void collectRenderers(const QJsonValue &value, const QString &type, QList<QJsonObject> &found) {
     if (value.isArray()) {
         for (const auto &item : value.toArray())
-            collectRenderers(item, found);
+            collectRenderers(item, type, found);
     } else if (value.isObject()) {
         const auto object = value.toObject();
-        if (object.contains("playlistPanelVideoRenderer"))
-            found.append(object.value("playlistPanelVideoRenderer").toObject());
+        if (object.contains(type))
+            found.append(object.value(type).toObject());
         else
             for (const auto &child : object)
-                collectRenderers(child, found);
+                collectRenderers(child, type, found);
     }
+}
+
+int seconds(const QString &clock) {
+    int total = 0;
+    for (const auto &part : clock.split(':'))
+        total = total * 60 + part.toInt();
+    return total;
 }
 
 QString lastLine(const QByteArray &output) {
@@ -122,9 +132,11 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
 }
 
 Backend::~Backend() {
-    if (m_mixReply) {
-        m_mixReply->disconnect(this);
-        m_mixReply->abort();
+    for (QNetworkReply *reply : {m_mixReply.data(), m_searchReply.data()}) {
+        if (reply) {
+            reply->disconnect(this);
+            reply->abort();
+        }
     }
     for (QProcess *process : {&m_fetch, &m_resolve}) {
         process->disconnect(this);
@@ -138,6 +150,13 @@ Backend::~Backend() {
 QVariantList Backend::upcoming() const {
     QVariantList list;
     for (const auto &track : m_queue)
+        list.append(track.toMap());
+    return list;
+}
+
+QVariantList Backend::results() const {
+    QVariantList list;
+    for (const auto &track : m_results)
         list.append(track.toMap());
     return list;
 }
@@ -156,6 +175,7 @@ QList<Track> Backend::parseEntries(const QByteArray &json) {
             track.artist = entry.value("uploader").toString();
         track.artist.remove(topic);
         track.duration = entry.value("duration").toDouble();
+        track.fromPlaylist = true;
         // Private and deleted videos stay in playlists as "[Private video]".
         if (track.id.isEmpty() || track.title.isEmpty() || (track.title.startsWith('[') && track.title.endsWith(']')))
             continue;
@@ -166,7 +186,7 @@ QList<Track> Backend::parseEntries(const QByteArray &json) {
 
 QList<Track> Backend::parseRadio(const QByteArray &json) {
     QList<QJsonObject> renderers;
-    collectRenderers(QJsonDocument::fromJson(json).object(), renderers);
+    collectRenderers(QJsonDocument::fromJson(json).object(), "playlistPanelVideoRenderer", renderers);
     QList<Track> tracks;
     for (const auto &renderer : renderers) {
         Track track;
@@ -174,14 +194,37 @@ QList<Track> Backend::parseRadio(const QByteArray &json) {
         track.title = runs(renderer.value("title"));
         // "Shakira & Burna Boy • 1.3B views • 8.8M likes"
         track.artist = runs(renderer.value("longBylineText")).section(QString::fromUtf8(" • "), 0, 0);
-        int seconds = 0;
-        for (const auto &part : runs(renderer.value("lengthText")).split(':'))
-            seconds = seconds * 60 + part.toInt();
-        track.duration = seconds;
+        track.duration = seconds(runs(renderer.value("lengthText")));
         if (!track.id.isEmpty() && !track.title.isEmpty())
             tracks.append(track);
     }
     return tracks;
+}
+
+QList<Track> Backend::parseSearch(const QByteArray &json) {
+    QList<QJsonObject> renderers;
+    collectRenderers(QJsonDocument::fromJson(json).object(), "musicResponsiveListItemRenderer", renderers);
+    QList<Track> tracks;
+    for (const auto &renderer : renderers) {
+        const auto columns = renderer.value("flexColumns").toArray();
+        auto column = [&](int i) { return runs(columns.at(i).toObject().value("musicResponsiveListItemFlexColumnRenderer").toObject().value("text")); };
+        Track track;
+        track.id = renderer.value("playlistItemData").toObject().value("videoId").toString();
+        track.title = column(0);
+        // "Кино • Группа крови • 4:45": artist, album, length.
+        const QStringList details = column(1).split(QString::fromUtf8(" • "));
+        track.artist = details.first();
+        if (details.size() > 1 && details.last().contains(':'))
+            track.duration = seconds(details.last());
+        if (!track.id.isEmpty() && !track.title.isEmpty())
+            tracks.append(track);
+    }
+    return tracks;
+}
+
+bool Backend::isLink(const QString &text) {
+    const QString trimmed = text.trimmed();
+    return trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains("list=");
 }
 
 // The same song often comes back as an official video, a lyric video, and an
@@ -197,9 +240,7 @@ QString Backend::songKey(const Track &track) {
     return title.isEmpty() ? track.id : title;
 }
 
-void Backend::setSeeds(QList<Track> seeds) {
-    for (auto &seed : seeds)
-        seed.fromPlaylist = true;
+void Backend::setSeeds(const QList<Track> &seeds) {
     m_seeds = seeds;
     m_seedOrder.clear();
     for (int i = 0; i < m_seeds.size(); ++i)
@@ -223,7 +264,7 @@ Track Backend::nextSeed() {
 void Backend::addRadio(const Track &seed, const QList<Track> &mix) {
     int added = 0;
     for (const auto &track : mix) {
-        if (added == kRadioPerSeed)
+        if (added == (m_chain ? kChainPerSeed : kRadioPerSeed))
             break;
         const QString key = songKey(track);
         if (track.id == seed.id || m_seen.contains(key))
@@ -232,7 +273,89 @@ void Backend::addRadio(const Track &seed, const QList<Track> &mix) {
         m_queue.append(track);
         ++added;
     }
+    // A song's radio goes on from the newest track it found, or, when this
+    // mix had nothing new, from somewhere else in it, so it never gets stuck.
+    if (m_chain && added > 0)
+        m_chainSeed = m_queue.last();
+    else if (m_chain && !mix.isEmpty())
+        m_chainSeed = mix.at(QRandomGenerator::global()->bounded(int(mix.size())));
     queueChanged();
+}
+
+void Backend::reset() {
+    m_loadingPlaylist = false;
+    if (m_fetch.state() != QProcess::NotRunning) {
+        m_fetch.kill();
+        m_fetch.waitForFinished(1000);
+    }
+    if (m_mixReply) {
+        m_mixReply->disconnect(this);
+        m_mixReply->abort();
+        m_mixReply->deleteLater();
+        m_mixReply = nullptr;
+    }
+    m_seeds.clear();
+    m_queue.clear();
+    m_seen.clear();
+    m_chain = false;
+    m_failures = 0;
+    m_waiting = false;
+    setError({});
+    emit upcomingChanged();
+}
+
+void Backend::submit(const QString &text) {
+    if (isLink(text))
+        start(text);
+    else
+        search(text);
+}
+
+void Backend::search(const QString &input) {
+    const QString query = input.trimmed();
+    if (query.isEmpty())
+        return;
+    if (m_searchReply) {
+        m_searchReply->disconnect(this);
+        m_searchReply->abort();
+        m_searchReply->deleteLater();
+    }
+    setError({});
+    setStatus(tr("Searching…"));
+    // The "params" value is YouTube Music's own "Songs" filter.
+    m_searchReply = m_network.post(musicRequest("search"),
+                                   musicBody({{"query", query}, {"params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"}}));
+    connect(m_searchReply, &QNetworkReply::finished, this, [this] {
+        QNetworkReply *reply = std::exchange(m_searchReply, nullptr);
+        reply->deleteLater();
+        setStatus({});
+        if (reply->error() != QNetworkReply::NoError) {
+            setError(tr("Couldn't search YouTube Music: %1").arg(reply->errorString()));
+            return;
+        }
+        m_results = parseSearch(reply->readAll());
+        if (m_results.isEmpty())
+            setStatus(tr("Nothing found."));
+        emit resultsChanged();
+    });
+}
+
+void Backend::clearResults() {
+    m_results.clear();
+    emit resultsChanged();
+}
+
+void Backend::playSimilar(int index) {
+    if (index < 0 || index >= m_results.size())
+        return;
+    const Track song = m_results.at(index);
+    clearResults();
+    reset();
+    setSeeds({song});
+    m_chain = true;
+    m_chainSeed = song;
+    m_waiting = true;
+    refill();
 }
 
 void Backend::start(const QString &input) {
@@ -244,23 +367,8 @@ void Backend::start(const QString &input) {
     emit playlistUrlChanged();
 
     // The current track keeps playing until the new playlist is ready.
-    m_loadingPlaylist = false;
-    if (m_fetch.state() != QProcess::NotRunning) {
-        m_fetch.kill();
-        m_fetch.waitForFinished(1000);
-    }
-    if (m_mixReply) {
-        m_mixReply->disconnect(this);
-        m_mixReply->abort();
-        m_mixReply->deleteLater();
-    }
-    m_seeds.clear();
-    m_queue.clear();
-    m_seen.clear();
-    m_failures = 0;
-    m_waiting = false;
-    setError({});
-    emit upcomingChanged();
+    clearResults();
+    reset();
     setStatus(tr("Loading playlist…"));
     m_loadingPlaylist = true;
     // "--" keeps a pasted link from ever being read as a yt-dlp option.
@@ -285,7 +393,7 @@ void Backend::playlistLoaded(int code, QProcess::ExitStatus status) {
 }
 
 void Backend::mixLoaded() {
-    QNetworkReply *reply = m_mixReply;
+    QNetworkReply *reply = std::exchange(m_mixReply, nullptr);
     reply->deleteLater();
     const auto mix = reply->error() == QNetworkReply::NoError ? parseRadio(reply->readAll()) : QList<Track>{};
     if (!mix.isEmpty()) {
@@ -300,9 +408,10 @@ void Backend::mixLoaded() {
 void Backend::refill() {
     if (m_seeds.isEmpty() || m_mixReply || m_queue.size() >= kLowWater || m_failures >= kMaxFailures)
         return;
-    const Track seed = nextSeed();
+    const Track seed = m_chain ? m_chainSeed : nextSeed();
     m_mixSeed = seed;
-    m_mixReply = m_network.post(radioRequest(), radioBody(seed.id));
+    m_mixReply = m_network.post(musicRequest("next"),
+                                musicBody({{"videoId", seed.id}, {"playlistId", "RDAMVM" + seed.id}, {"isAudioOnly", true}}));
     connect(m_mixReply, &QNetworkReply::finished, this, &Backend::mixLoaded);
     if (!m_seen.contains(songKey(seed))) {
         m_seen.insert(songKey(seed));

@@ -31,6 +31,7 @@ class Backend : public QObject {
     Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
     Q_PROPERTY(QVariantMap current READ current NOTIFY currentChanged)
     Q_PROPERTY(QVariantList upcoming READ upcoming NOTIFY upcomingChanged)
+    Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
     Q_PROPERTY(int position READ position NOTIFY positionChanged)
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
@@ -45,11 +46,18 @@ public:
     bool playing() const { return !m_current.id.isEmpty() && !m_paused; }
     QVariantMap current() const { return m_current.toMap(); }
     QVariantList upcoming() const;
+    QVariantList results() const;
     int position() const { return m_position; }
     int duration() const { return m_duration; }
     int volume() const { return m_volume; }
 
+    // A playlist link starts its radio; anything else searches for songs.
+    Q_INVOKABLE void submit(const QString &text);
     Q_INVOKABLE void start(const QString &url);
+    Q_INVOKABLE void search(const QString &query);
+    Q_INVOKABLE void clearResults();
+    // Endless radio of songs like this search result.
+    Q_INVOKABLE void playSimilar(int index);
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void next();
     Q_INVOKABLE void seek(int seconds);
@@ -59,8 +67,10 @@ public:
     // The radio's queue, public so tests can drive it without the network.
     static QList<Track> parseEntries(const QByteArray &json);
     static QList<Track> parseRadio(const QByteArray &json);
+    static QList<Track> parseSearch(const QByteArray &json);
+    Q_INVOKABLE static bool isLink(const QString &text);
     static QString songKey(const Track &track);
-    void setSeeds(QList<Track> seeds);
+    void setSeeds(const QList<Track> &seeds);
     Track nextSeed();
     void addRadio(const Track &seed, const QList<Track> &mix);
     QList<Track> queue() const { return m_queue; }
@@ -72,6 +82,7 @@ signals:
     void playingChanged();
     void currentChanged();
     void upcomingChanged();
+    void resultsChanged();
     void positionChanged();
     void durationChanged();
     void volumeChanged();
@@ -79,6 +90,7 @@ signals:
 private:
     void playlistLoaded(int code, QProcess::ExitStatus status);
     void mixLoaded();
+    void reset();
     void refill();
     void queueChanged();
     void playNext();
@@ -92,7 +104,8 @@ private:
     QProcess m_fetch;
     bool m_loadingPlaylist = false;
     QNetworkAccessManager m_network;
-    QPointer<QNetworkReply> m_mixReply;
+    QPointer<QNetworkReply> m_mixReply, m_searchReply;
+    QList<Track> m_results;
     QProcess m_resolve;
     QString m_resolvingId, m_streamId, m_streamUrl;
 
@@ -102,6 +115,9 @@ private:
     QList<int> m_seedOrder;
     int m_seedCursor = 0, m_cycle = -1, m_failures = 0;
     Track m_mixSeed;
+    // A song's radio has a single seed and follows the mixes from it.
+    bool m_chain = false;
+    Track m_chainSeed;
     QList<Track> m_queue;
     QSet<QString> m_seen;
     Track m_current;

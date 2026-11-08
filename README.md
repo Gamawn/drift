@@ -7,6 +7,10 @@ and Drift takes each song from it in turn, plays it, then plays a few tracks
 from YouTube Music's radio for that song, and keeps going forever. Playlist
 songs come back after every pass; nothing else repeats.
 
+Or type a song name instead of a link: Drift searches YouTube Music, and the
+song you pick starts an endless radio of similar songs that keeps moving from
+one related mix to the next.
+
 Audio plays through `mpv` with video off and a small buffer, and `yt-dlp`
 reads the playlist, so the whole thing stays around 200 MB.
 
@@ -18,8 +22,9 @@ reads the playlist, so the whole thing stays around 200 MB.
 | N | Next track |
 | ← → | Seek 10 seconds |
 | ↑ ↓ | Volume |
-| Ctrl+L | Change playlist |
-| Esc | Leave the link field |
+| Enter | Search, or play the picked song |
+| Ctrl+L | Search or change playlist |
+| Esc | Close search results, leave the field |
 | ? | Show shortcuts |
 | Q | Quit |
 
