@@ -19,11 +19,24 @@ jobs:
 
       - uses: ilammy/msvc-dev-cmd@v1
 
-      - uses: jurplel/install-qt-action@v4
+      # Plain cache + aqt instead of install-qt-action, which pip-installs aqt even on a cache hit.
+      - id: qt-cache
+        uses: actions/cache@v4
         with:
-          version: '6.8.3'
-          arch: win64_msvc2022_64
-          cache: true
+          path: Qt
+          key: qt-6.8.3-win64_msvc2022_64
+
+      - if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 --outputdir Qt
+
+      - run: echo "$env:GITHUB_WORKSPACE\Qt\6.8.3\msvc2022_64\bin" >> $env:GITHUB_PATH
 
       - name: Build
         shell: cmd
@@ -31,6 +44,8 @@ jobs:
           mkdir build
           cd build
           qmake CONFIG-=debug_and_release ..\drift.pro
+          rem qmake's nmake batch rules hand cl a whole directory at once, so /MP spreads it over the cores.
+          set CL=/MP
           nmake
 
       - name: Bundle
@@ -68,16 +83,8 @@ jobs:
             Drift-setup-x64.exe
             Drift-windows-x64.zip
 
-      - if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            Drift-setup-x64.exe
-            Drift-windows-x64.zip
-
   # The Arch package, the same one bin/install builds, for Omarchy machines.
   arch:
-    needs: build
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
@@ -96,7 +103,17 @@ jobs:
           name: drift-arch-x86_64
           path: pkgbuild/drift-[0-9]*.pkg.tar.zst
 
-      - if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  # One publish after both builds, so the parallel jobs don't race to create the release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, arch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: pkgbuild/drift-[0-9]*.pkg.tar.zst
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
