@@ -23,7 +23,7 @@ SetupIconFile=..\pkgbuild\drift.ico
 UninstallDisplayIcon={app}\drift.exe
 OutputDir=..
 OutputBaseFilename=Drift-setup-x64
-Compression=lzma2
+Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
 ; Drift may be playing in the background with its window closed.
