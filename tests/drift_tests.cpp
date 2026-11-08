@@ -1,7 +1,13 @@
 #include <QDir>
 #include <QFile>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QNetworkProxy>
+#include <QScopeGuard>
 #include <QSet>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -17,6 +23,11 @@ private slots:
     {
         // Backend reads QSettings; keep the tests away from the real config.
         QStandardPaths::setTestModeEnabled(true);
+    }
+
+    void cleanup()
+    {
+        QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     }
 
     void parsesPlaylistEntries()
@@ -124,6 +135,84 @@ private slots:
         QVERIFY(backend.status().isEmpty());
     }
 
+    void failedStreamIsResolvedOnce()
+    {
+        QTemporaryDir dir;
+        const QString log = dir.filePath("calls");
+        const QString ytdlp = script(dir.filePath("yt-dlp"), "#!/bin/sh\necho >> '" + log.toUtf8() + "'\nexit 1\n");
+        Backend backend(ytdlp, "/nonexistent/mpv");
+        backend.addRadio({"s", "Seed", "A"}, {{"blocked", "Blocked Song", "B"}});
+        QTest::qWait(500);
+        QCOMPARE(lines(log), 1);
+    }
+
+    void stopsAfterTracksFailInARow()
+    {
+        if (QStandardPaths::findExecutable("python3").isEmpty())
+            QSKIP("needs python3 for the fake mpv");
+        QTemporaryDir dir;
+        const QString log = dir.filePath("loads");
+        // Answers every loadfile with the end-file error a broken yt-dlp gives.
+        const QString mpv = script(dir.filePath("mpv"), "#!/usr/bin/env python3\n"
+            "import json, socket, sys\n"
+            "path = [a.split('=', 1)[1] for a in sys.argv if a.startswith('--input-ipc-server=')][0]\n"
+            "server = socket.socket(socket.AF_UNIX); server.bind(path); server.listen(1)\n"
+            "conn, _ = server.accept()\n"
+            "for line in conn.makefile('rb'):\n"
+            "    if json.loads(line).get('command', [''])[0] == 'loadfile':\n"
+            "        open('" + log.toUtf8() + "', 'a').write('load\\n')\n"
+            "        conn.sendall(b'{\"event\":\"end-file\",\"reason\":\"error\"}\\n')\n");
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+
+        Backend backend("/nonexistent/yt-dlp", mpv);
+        const Track seed{"s", "Seed", "A"};
+        QList<Track> mix;
+        for (int i = 0; i < 5; ++i)
+            mix.append(Track{QString("m%1").arg(i), QString("Mix %1").arg(i), "C"});
+        backend.setSeeds({seed});
+        backend.addRadio(seed, mix);
+        backend.togglePause();
+        QTRY_VERIFY(backend.error().contains("in a row"));
+        QTest::qWait(300);
+        QCOMPARE(lines(log), 3);
+        QVERIFY(backend.current().isEmpty());
+    }
+
+    void mixLookupWaitsAfterFailure()
+    {
+        QTemporaryDir dir;
+        const QString ytdlp = script(dir.filePath("yt-dlp"),
+            "#!/bin/sh\necho '{\"entries\": [{\"id\": \"a1\", \"title\": \"Song One\", \"channel\": \"A\"}]}'\n");
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+
+        Backend backend(ytdlp, "/nonexistent/mpv");
+        backend.start("https://music.youtube.com/playlist?list=PLx");
+        QTRY_COMPARE(requests, 1);
+        // Offline, an instant retry would fail at once and give up within a second.
+        QTest::qWait(1000);
+        QCOMPARE(requests, 1);
+        QVERIFY(!backend.error().contains("YouTube Music"));
+    }
+
+    void smallPlaylistRadioStartsOverWhenMixesRunDry()
+    {
+        Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        const Track seed{"s", "Seed", "A"};
+        QList<Track> mix;
+        for (int i = 0; i < 5; ++i)
+            mix.append(Track{QString("m%1").arg(i), QString("Mix %1").arg(i), "C"});
+        backend.setSeeds({seed});
+        backend.addRadio(seed, mix);
+        backend.addRadio(seed, mix);
+        QCOMPARE(backend.queue().size(), 5);
+        backend.addRadio(seed, mix);
+        QCOMPARE(backend.queue().size(), 10);
+    }
+
     void themeFallsBack()
     {
         QTemporaryDir dir;
@@ -148,7 +237,7 @@ private slots:
 
     void themeFollowsHyprlandRounding()
     {
-        QTemporaryDir dir;
+        QTemporaryDir dir, themeDir;
         const QString response = dir.filePath("response.json"), command = dir.filePath("hyprctl");
         auto write = [](const QString &path, const QByteArray &data) {
             QFile file(path);
@@ -158,9 +247,28 @@ private slots:
         QVERIFY(QFile::setPermissions(command, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
         QVERIFY(write(response, "{\"int\":0}"));
 
-        Theme theme(dir.path(), nullptr, command);
+        // A fake Hyprland event socket where Theme looks for it.
+        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR"), signature = qgetenv("HYPRLAND_INSTANCE_SIGNATURE");
+        const auto restore = qScopeGuard([&] {
+            qputenv("XDG_RUNTIME_DIR", runtime);
+            qputenv("HYPRLAND_INSTANCE_SIGNATURE", signature);
+        });
+        qputenv("XDG_RUNTIME_DIR", dir.path().toUtf8());
+        qputenv("HYPRLAND_INSTANCE_SIGNATURE", "test");
+        QVERIFY(QDir(dir.path()).mkpath("hypr/test"));
+        QLocalServer hyprland;
+        QVERIFY(hyprland.listen(dir.filePath("hypr/test/.socket2.sock")));
+
+        Theme theme(themeDir.path(), nullptr, command);
+        QTRY_VERIFY(hyprland.hasPendingConnections());
+        QLocalSocket *events = hyprland.nextPendingConnection();
+        QTest::qWait(300); // the startup query finishes
         QCOMPARE(theme.radius(), 0);
         QVERIFY(write(response, "{\"int\":6}"));
+        events->write("activewindow>>kitty,shell\n");
+        QTest::qWait(300);
+        QCOMPARE(theme.radius(), 0);
+        events->write("configreloaded>>\n");
         QTRY_COMPARE(theme.radius(), 6);
     }
 
@@ -202,6 +310,38 @@ private slots:
     }
 
 private:
+    static QString script(const QString &path, const QByteArray &contents)
+    {
+        write(path, contents);
+        QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        return path;
+    }
+
+    static int lines(const QString &path)
+    {
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? int(file.readAll().count('\n')) : 0;
+    }
+
+    // Every request goes through a local proxy that refuses it, so network calls fail fast and
+    // are counted. A refusal, not a hang-up: Qt retries a dropped connection by itself.
+    static void failNetwork(QTcpServer &proxy, int &requests)
+    {
+        QVERIFY(proxy.listen(QHostAddress::LocalHost));
+        QObject::connect(&proxy, &QTcpServer::newConnection, &proxy, [&proxy, &requests] {
+            while (QTcpSocket *socket = proxy.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, &requests] {
+                    ++requests;
+                    socket->readAll();
+                    socket->write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    socket->disconnectFromHost();
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            }
+        });
+        QNetworkProxy::setApplicationProxy({QNetworkProxy::HttpProxy, "127.0.0.1", proxy.serverPort()});
+    }
+
     static void write(const QString &path, const QByteArray &contents)
     {
         QFile file(path);

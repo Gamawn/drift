@@ -113,7 +113,7 @@ private:
     bool m_errorClearsOnPlay = false;
     QList<Track> m_seeds;
     QList<int> m_seedOrder;
-    int m_seedCursor = 0, m_cycle = -1, m_failures = 0;
+    int m_seedCursor = 0, m_cycle = -1, m_failures = 0, m_playFailures = 0, m_emptyMixes = 0;
     Track m_mixSeed;
     // A song's radio has a single seed and follows the mixes from it.
     bool m_chain = false;

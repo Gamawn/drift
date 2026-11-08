@@ -8,6 +8,7 @@
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
 #include <algorithm>
 #include <utility>
 
@@ -19,7 +20,7 @@ constexpr int kRadioPerSeed = 5;
 // A song's radio hops from mix to mix; this many tracks from each mix before
 // hopping keeps it close to the song it started from.
 constexpr int kChainPerSeed = 10;
-// Consecutive failed mix lookups before the radio stops and says so.
+// Consecutive failures (mix lookups, or tracks that won't play) before we say so.
 constexpr int kMaxFailures = 3;
 
 QString watchUrl(const QString &id) { return "https://www.youtube.com/watch?v=" + id; }
@@ -102,10 +103,9 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
 
     connect(&m_resolve, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         const QString url = QString::fromUtf8(m_resolve.readAllStandardOutput()).section('\n', 0, 0).trimmed();
-        if (code == 0 && status == QProcess::NormalExit && url.startsWith("http")) {
-            m_streamId = m_resolvingId;
-            m_streamUrl = url;
-        }
+        // A failed track is marked tried too, or resolveNext would start yt-dlp for it again at once.
+        m_streamId = m_resolvingId;
+        m_streamUrl = code == 0 && status == QProcess::NormalExit && url.startsWith("http") ? url : QString();
         resolveNext();
     });
 
@@ -115,8 +115,11 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
         if (name == "time-pos") {
             // mpv reports many times a second; the window only shows seconds.
             const int position = value.isNull() ? 0 : int(value.toDouble());
-            if (position > 0 && m_errorClearsOnPlay)
-                setError({});
+            if (position > 0) {
+                m_playFailures = 0;
+                if (m_errorClearsOnPlay)
+                    setError({});
+            }
             if (position != m_position) {
                 m_position = position;
                 emit positionChanged();
@@ -250,6 +253,7 @@ void Backend::setSeeds(const QList<Track> &seeds) {
         m_seedOrder.append(i);
     m_seedCursor = m_seedOrder.size();
     m_cycle = -1;
+    m_emptyMixes = 0;
 }
 
 Track Backend::nextSeed() {
@@ -278,6 +282,12 @@ void Backend::addRadio(const Track &seed, const QList<Track> &mix) {
     }
     // A song's radio goes on from the newest track it found, or, when this
     // mix had nothing new, from somewhere else in it, so it never gets stuck.
+    // Once a whole pass over the playlist found nothing new, its radio may repeat.
+    m_emptyMixes = added > 0 || m_chain ? 0 : m_emptyMixes + 1;
+    if (m_emptyMixes > 0 && m_emptyMixes >= m_seeds.size()) {
+        m_seen.clear();
+        m_emptyMixes = 0;
+    }
     if (m_chain && added > 0)
         m_chainSeed = m_queue.last();
     else if (m_chain && !mix.isEmpty())
@@ -400,16 +410,22 @@ void Backend::mixLoaded() {
     reply->deleteLater();
     const auto mix = reply->error() == QNetworkReply::NoError ? parseRadio(reply->readAll()) : QList<Track>{};
     if (!mix.isEmpty()) {
-        m_failures = 0;
+        if (std::exchange(m_failures, 0) >= kMaxFailures)
+            setError({});
         addRadio(m_mixSeed, mix);
-    } else if (++m_failures >= kMaxFailures) {
-        setError(tr("Couldn't reach YouTube Music: %1").arg(reply->errorString()));
+        refill();
+        return;
     }
-    refill();
+    if (++m_failures >= kMaxFailures)
+        setError(reply->error() != QNetworkReply::NoError
+                     ? tr("Couldn't reach YouTube Music: %1").arg(reply->errorString())
+                     : tr("YouTube Music returned no tracks."));
+    // Offline, retrying at once fails at once; waiting rides out a Wi-Fi reconnect.
+    QTimer::singleShot(std::min(m_failures, 6) * 5000, this, &Backend::refill);
 }
 
 void Backend::refill() {
-    if (m_seeds.isEmpty() || m_mixReply || m_queue.size() >= kLowWater || m_failures >= kMaxFailures)
+    if (m_seeds.isEmpty() || m_mixReply || m_queue.size() >= kLowWater)
         return;
     const Track seed = m_chain ? m_chainSeed : nextSeed();
     m_mixSeed = seed;
@@ -442,7 +458,7 @@ void Backend::playNext() {
     m_current = m_queue.takeFirst();
     // A stream resolved ahead of time starts at once; otherwise mpv asks
     // yt-dlp itself, which takes a couple of seconds.
-    m_loadedStream = m_streamId == m_current.id;
+    m_loadedStream = m_streamId == m_current.id && !m_streamUrl.isEmpty();
     m_mpv.load(m_loadedStream ? m_streamUrl : watchUrl(m_current.id));
     m_streamId.clear();
     m_streamUrl.clear();
@@ -473,6 +489,14 @@ void Backend::trackEnded(bool failed) {
         m_mpv.load(watchUrl(m_current.id));
         return;
     }
+    if (failed && ++m_playFailures >= kMaxFailures) {
+        // Every track failing means yt-dlp or YouTube is broken; skipping on would never end.
+        setError(tr("Couldn't play several tracks in a row. Press N to try again."));
+        m_current = {};
+        emit currentChanged();
+        emit playingChanged();
+        return;
+    }
     if (failed)
         setError(tr("Couldn't play “%1”, skipped it.").arg(m_current.title), true);
     playNext();
@@ -489,6 +513,7 @@ void Backend::togglePause() {
 
 void Backend::next() {
     m_failures = 0;
+    m_playFailures = 0;
     setError({});
     if (!m_seeds.isEmpty())
         playNext();

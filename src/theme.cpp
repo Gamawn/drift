@@ -40,10 +40,19 @@ Theme::Theme(const QString &directory, QObject *parent, const QString &hyprctl)
             emit changed();
         }
     });
-    m_roundingPoll.setInterval(1000);
-    connect(&m_roundingPoll, &QTimer::timeout, this, &Theme::refreshRounding);
-    if (!m_hyprctl.isEmpty())
-        m_roundingPoll.start();
+    // Hyprland announces every config reload (a theme switch, an edited
+    // hyprland.conf) on its event socket; ask hyprctl again only then.
+    const QString signature = qEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE");
+    if (!m_hyprctl.isEmpty() && !signature.isEmpty()) {
+        connect(&m_events, &QLocalSocket::readyRead, this, [this] {
+            bool reloaded = false;
+            while (m_events.canReadLine())
+                reloaded |= m_events.readLine().startsWith("configreloaded>>");
+            if (reloaded)
+                refreshRounding();
+        });
+        m_events.connectToServer(qEnvironmentVariable("XDG_RUNTIME_DIR") + "/hypr/" + signature + "/.socket2.sock");
+    }
     reload();
 }
 

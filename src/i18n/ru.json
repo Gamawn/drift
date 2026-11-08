@@ -40,5 +40,7 @@
   "Searching…": "Ищу…",
   "Nothing found.": "Ничего не найдено.",
   "Couldn't search YouTube Music: %1": "Не удалось выполнить поиск в YouTube Music: %1",
-  "Paste a playlist link or search for a song": "Вставьте ссылку на плейлист или найдите песню"
+  "Paste a playlist link or search for a song": "Вставьте ссылку на плейлист или найдите песню",
+  "Couldn't play several tracks in a row. Press N to try again.": "Несколько треков подряд не удалось воспроизвести. Нажмите N, чтобы попробовать снова.",
+  "YouTube Music returned no tracks.": "YouTube Music не вернул ни одного трека."
 }
