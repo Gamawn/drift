@@ -44,8 +44,6 @@ jobs:
           mkdir build
           cd build
           qmake CONFIG-=debug_and_release ..\drift.pro
-          rem qmake's nmake batch rules hand cl a whole directory at once, so /MP spreads it over the cores.
-          set CL=/MP
           nmake
 
       - name: Bundle
