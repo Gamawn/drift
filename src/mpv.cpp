@@ -8,6 +8,11 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 
+#ifdef Q_OS_LINUX
+#include <csignal>
+#include <sys/prctl.h>
+#endif
+
 Mpv::Mpv(const QString &program, QObject *parent) : QObject(parent), m_program(program) {
 #ifdef Q_OS_WIN
     // mpv on Windows listens on a named pipe, which QLocalSocket reaches by the same path.
@@ -19,6 +24,10 @@ Mpv::Mpv(const QString &program, QObject *parent) : QObject(parent), m_program(p
     m_socketPath = QString("%1/drift-mpv-%2.sock").arg(runtime).arg(QCoreApplication::applicationPid());
 #endif
     hideConsole(m_process);
+#ifdef Q_OS_LINUX
+    // An idle mpv outlives a crashed or killed drift forever; the kernel ends it with us.
+    m_process.setChildProcessModifier([] { prctl(PR_SET_PDEATHSIG, SIGTERM); });
+#endif
 
     m_retry.setInterval(50);
     connect(&m_retry, &QTimer::timeout, this, &Mpv::connectSocket);
@@ -66,8 +75,13 @@ void Mpv::start() {
     m_process.start(m_program, {
         "--idle=yes", "--no-video", "--force-window=no", "--audio-display=no", "--no-terminal",
         "--ytdl-format=bestaudio/best",
-        // Audio needs only a few seconds of buffer; mpv's default is 150 MiB.
-        "--demuxer-max-bytes=4MiB", "--demuxer-max-back-bytes=1MiB",
+        // 1 MiB is about a minute of YouTube audio ahead, 256 KiB covers a 10-second
+        // seek back; mpv's default is 150 MiB.
+        "--demuxer-max-bytes=1MiB", "--demuxer-max-back-bytes=256KiB",
+        // Skip the Lua scripts a headless player never uses (8 threads, ~6 MB); ytdl_hook
+        // stays, as a track whose stream wasn't resolved is loaded by its watch URL.
+        // Not --load-console: mpv before 0.40 refuses that name and won't start.
+        "--load-scripts=no", "--osc=no", "--load-stats-overlay=no", "--load-auto-profiles=no",
         "--input-ipc-server=" + m_socketPath,
     });
     m_attempts = 0;
