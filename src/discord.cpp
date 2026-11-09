@@ -84,7 +84,11 @@ QJsonObject Discord::activity(const QVariantMap &track, int position, int durati
         {"status_display_type", 2}, // the member list names the song rather than "Drift"
         {"details", text(track.value("title").toString())},
         {"assets", QJsonObject{{"large_image", "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg"}}},
-        {"buttons", QJsonArray{QJsonObject{{"label", "Listen on YouTube Music"},
+        // Discord takes two buttons at most, and only web links: the first is docs/index.html,
+        // which passes the track on to the viewer's own Drift as drift://play/<id>.
+        {"buttons", QJsonArray{QJsonObject{{"label", "Listen in Drift"},
+                                           {"url", "https://gamawn.github.io/drift/?v=" + id}},
+                               QJsonObject{{"label", "Listen on YouTube Music"},
                                            {"url", "https://music.youtube.com/watch?v=" + id}}}},
     };
     const QString artist = track.value("artist").toString();

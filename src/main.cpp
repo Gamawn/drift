@@ -21,7 +21,10 @@
 #include "process.h"
 #ifdef Q_OS_WIN
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QMenu>
+#include <QSettings>
 #include <QSystemTrayIcon>
 #include <qt_windows.h>
 #include "smtc.h"
@@ -65,16 +68,38 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    // One Drift at a time: launching it again only brings the running one's window back.
+    // One Drift at a time: launching it again only brings the running one's window back,
+    // and hands it the drift:// link this launch was opened with, if any.
+    const QString link = app.arguments().value(1);
     const QString instance = "drift-" + qEnvironmentVariable("USER", qEnvironmentVariable("USERNAME"));
     QLocalSocket running;
     running.connectToServer(instance);
-    if (running.waitForConnected(500))
+    if (running.waitForConnected(500)) {
+        running.write(link.toUtf8() + '\n');
+        running.waitForBytesWritten(500);
+        running.disconnectFromServer();
+        if (running.state() != QLocalSocket::UnconnectedState)
+            running.waitForDisconnected(500);
         return 0;
+    }
     QLocalServer::removeServer(instance); // left behind if Drift crashed
     QLocalServer server;
     server.setSocketOptions(QLocalServer::UserAccessOption);
     server.listen(instance);
+
+#ifdef Q_OS_WIN
+    // drift.iss registers drift:// links; the portable zip has only this, and may have been moved.
+    {
+        QSettings scheme("HKEY_CURRENT_USER\\Software\\Classes\\drift", QSettings::NativeFormat);
+        const QString command = scheme.value("shell/open/command/.").toString();
+        if (!QFile::exists(command.section('"', 1, 1))) {
+            scheme.setValue(".", "URL:Drift");
+            scheme.setValue("URL Protocol", "");
+            scheme.setValue("shell/open/command/.",
+                            '"' + QDir::toNativeSeparators(app.applicationFilePath()) + "\" \"%1\"");
+        }
+    }
+#endif
 
     // An update downloaded last time goes in now, while nothing is playing.
     Updater updater;
@@ -131,8 +156,21 @@ int main(int argc, char *argv[]) {
             });
     };
     QObject::connect(&server, &QLocalServer::newConnection, [&] {
-        while (QLocalSocket *other = server.nextPendingConnection())
-            other->deleteLater();
+        while (QLocalSocket *other = server.nextPendingConnection()) {
+            // One line from the other launch: its drift:// link, or nothing.
+            auto read = [&backend, other] {
+                if (!other->canReadLine() && other->state() == QLocalSocket::ConnectedState)
+                    return;
+                const QString id = Backend::linkId(QString::fromUtf8(other->readAll()));
+                other->disconnect();
+                other->deleteLater();
+                if (!id.isEmpty())
+                    backend.playId(id);
+            };
+            QObject::connect(other, &QLocalSocket::readyRead, other, read);
+            QObject::connect(other, &QLocalSocket::disconnected, other, read);
+            read(); // it may all be here already
+        }
         show();
     });
 #ifdef Q_OS_LINUX
@@ -181,6 +219,8 @@ int main(int argc, char *argv[]) {
     show();
     if (!window())
         return 1;
+    if (const QString id = Backend::linkId(link); !id.isEmpty())
+        backend.playId(id);
     // Not in the way of the window coming up or the first track loading.
     QTimer::singleShot(5000, &updater, &Updater::check);
     const int code = app.exec();

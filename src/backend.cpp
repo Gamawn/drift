@@ -249,6 +249,13 @@ QString Backend::songKey(const Track &track) {
     return title.isEmpty() ? track.id : title;
 }
 
+// The link comes from outside (a web page, Discord), so only a real video id gets through.
+QString Backend::linkId(const QString &link) {
+    static const QRegularExpression pattern(R"(^drift://play/([A-Za-z0-9_-]{11})/?$)",
+                                            QRegularExpression::CaseInsensitiveOption);
+    return pattern.match(link.trimmed()).captured(1);
+}
+
 void Backend::setSeeds(const QList<Track> &seeds) {
     m_seeds = seeds;
     m_seedOrder.clear();
@@ -277,6 +284,13 @@ void Backend::addRadio(const Track &seed, const QList<Track> &mix) {
         if (added == (m_chain ? kChainPerSeed : kRadioPerSeed))
             break;
         const QString key = songKey(track);
+        if (track.id == seed.id && m_current.id == track.id && m_current.title.isEmpty()) {
+            // A track from a drift:// link started as an id alone; its own mix names it.
+            m_current.title = track.title;
+            m_current.artist = track.artist;
+            m_seen.insert(key);
+            emit currentChanged();
+        }
         if (track.id == seed.id || m_seen.contains(key))
             continue;
         m_seen.insert(key);
@@ -359,7 +373,14 @@ void Backend::clearResults() {
 void Backend::playSimilar(int index) {
     if (index < 0 || index >= m_results.size())
         return;
-    const Track song = m_results.at(index);
+    playSong(m_results.at(index));
+}
+
+void Backend::playId(const QString &id) {
+    playSong(Track{id});
+}
+
+void Backend::playSong(const Track &song) {
     clearResults();
     reset();
     setSeeds({song});
