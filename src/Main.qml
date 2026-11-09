@@ -375,7 +375,10 @@ ApplicationWindow {
                             ["Esc", qsTr("Close search results")],
                             ["?", qsTr("Show shortcuts")],
                             ["Q", qsTr("Quit")]
-                        ]
+                        ].concat(Qt.platform.os === "windows" ? [ // global hotkeys, see smtc.cpp
+                            ["Alt+X", qsTr("Play or pause, from anywhere")],
+                            ["Alt+C", qsTr("Next track, from anywhere")]
+                        ] : [])
                         delegate: RowLayout {
                             required property var modelData
                             spacing: 24
