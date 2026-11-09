@@ -56,6 +56,7 @@ ApplicationWindow {
     Shortcut { sequence: "Right"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.seek(10) }
     Shortcut { sequence: "Up"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.changeVolume(5) }
     Shortcut { sequence: "Down"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.changeVolume(-5) }
+    Shortcut { sequence: "D"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: discord.enabled = !discord.enabled }
     Shortcut { sequence: "Ctrl+L"; context: Qt.ApplicationShortcut; onActivated: { urlField.forceActiveFocus(); urlField.selectAll() } }
     Shortcut {
         sequence: "Escape"
@@ -133,6 +134,13 @@ ApplicationWindow {
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: false
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: backend.current.id !== undefined
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.togglePause()
                     }
                 }
 
@@ -373,11 +381,13 @@ ApplicationWindow {
                             ["Ctrl+L", qsTr("Search or change playlist")],
                             ["Enter", qsTr("Search, or play the picked song")],
                             ["Esc", qsTr("Close search results")],
+                            ["D", discord.enabled ? qsTr("Hide the track from Discord") : qsTr("Show the track in Discord")],
                             ["?", qsTr("Show shortcuts")],
                             ["Q", qsTr("Quit")]
                         ].concat(Qt.platform.os === "windows" ? [ // global hotkeys, see smtc.cpp
                             ["Alt+X", qsTr("Play or pause, from anywhere")],
-                            ["Alt+C", qsTr("Next track, from anywhere")]
+                            ["Alt+C", qsTr("Next track, from anywhere")],
+                            ["Alt+V  Alt+B", qsTr("Volume down or up, from anywhere")]
                         ] : [])
                         delegate: RowLayout {
                             required property var modelData

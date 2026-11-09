@@ -7,6 +7,7 @@ TEMPLATE = app
 
 HEADERS += \
     src/backend.h \
+    src/discord.h \
     src/mpv.h \
     src/process.h \
     src/theme.h \
@@ -15,6 +16,7 @@ HEADERS += \
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \
+    src/discord.cpp \
     src/mpv.cpp \
     src/theme.cpp \
     src/translator.cpp
@@ -40,3 +42,6 @@ linux {
     HEADERS += src/mpris.h
     SOURCES += src/mpris.cpp
 }
+
+DISTFILES += \
+    TODO.md

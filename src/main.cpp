@@ -13,6 +13,7 @@
 #include <QUrl>
 
 #include "backend.h"
+#include "discord.h"
 #ifdef Q_OS_LINUX
 #include <malloc.h>
 #include "mpris.h"
@@ -75,6 +76,7 @@ int main(int argc, char *argv[]) {
 
     Theme theme;
     Backend backend(findTool("yt-dlp"), findTool("mpv"));
+    Discord discord(&backend);
 
     // Closing the window while music plays keeps it playing in the background;
     // the window and its QML engine are freed and built again when shown.
@@ -94,6 +96,7 @@ int main(int argc, char *argv[]) {
         engine->rootContext()->setContextProperty("translator", &translator);
         engine->rootContext()->setContextProperty("theme", &theme);
         engine->rootContext()->setContextProperty("backend", &backend);
+        engine->rootContext()->setContextProperty("discord", &discord);
         engine->load(QUrl("qrc:/Main.qml"));
         if (QWindow *created = window())
             QObject::connect(created, &QWindow::visibleChanged, engine, [&](bool visible) {

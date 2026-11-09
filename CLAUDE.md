@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Drift is an Omarchy desktop app: endless YouTube Music radio from a playlist link or a song search. C++17 + Qt 6 Quick (QML, Material style), built with qmake6 into one binary.
+Drift is an Omarchy desktop app that also ships for Windows (and builds on macOS): endless YouTube Music radio from a playlist link or a song search. C++17 (C++20 on Windows, for C++/WinRT) + Qt 6 Quick (QML, Material style), built with qmake into one binary.
 
 ## Commands
 
@@ -18,7 +18,37 @@ Run a single Qt Test function after `bin/test` has built once:
 QT_QPA_PLATFORM=offscreen build/tests/drift_tests parsesPlaylistEntries
 ```
 
-Runtime needs `mpv` and `yt-dlp`. New source files must be added to **both** `drift.pro` and `tests/drift_tests.pro` (the test binary compiles `src/*.cpp` directly); new QML or i18n files must go in `src/resources.qrc`.
+`bin/*` are POSIX sh scripts for Linux and macOS (`qmake6`, `make`); on Windows see below.
+
+### Windows
+
+Build with Qt for MSVC from a shell that has the MSVC environment (`vcvars64.bat`); MinGW can't build `smtc.cpp` (C++/WinRT):
+
+```bat
+mkdir build\win && cd build\win
+qmake CONFIG-=debug_and_release ..\..\drift.pro
+set CL=/MP
+nmake
+```
+
+Qt Creator builds into `build\Desktop_Qt_<version>_MSVC2022_64bit_<Debug|Release>\`, with a `drift.exe` under both `debug\` and `release\`. Its Run button starts `release\drift.exe` even in the Debug kit, because `drift.pro` sets `CONFIG += release`; `nmake debug` or `nmake release` there rebuilds one by hand.
+
+`mpv.exe` and `yt-dlp.exe` aren't installed system-wide on a dev machine. Drift looks for each beside `drift.exe` first, then on `PATH` (`findTool`), and without mpv it shows "mpv isn't installed" on the first play. Put both next to the `drift.exe` that actually runs (the folder is git-ignored), from the same sources the release workflow uses:
+
+```powershell
+$dir = "build\win"   # wherever drift.exe is
+Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$dir\yt-dlp.exe"
+$mpv = (Invoke-RestMethod https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest).assets |
+    Where-Object name -like 'mpv-x86_64-2*.7z' | Select-Object -First 1
+Invoke-WebRequest $mpv.browser_download_url -OutFile "$env:TEMP\mpv.7z"
+& "$env:ProgramFiles\7-Zip\7z.exe" e "$env:TEMP\mpv.7z" "-o$dir" mpv.exe
+```
+
+On Windows mpv's IPC is the named pipe `\\.\pipe\drift-mpv-<pid>` rather than a socket file; QLocalSocket reaches both the same way.
+
+### Adding files
+
+Runtime needs `mpv` and `yt-dlp` on every platform. New source files must be added to **both** `drift.pro` and `tests/drift_tests.pro` (the test binary compiles `src/*.cpp` directly); new QML or i18n files must go in `src/resources.qrc`.
 
 ## Architecture
 
@@ -33,7 +63,8 @@ Runtime needs `mpv` and `yt-dlp`. New source files must be added to **both** `dr
   - State is kept with QSettings, so tests call `QStandardPaths::setTestModeEnabled(true)`.
 - **Mpv** (`mpv.cpp`): a separate `mpv --idle` process controlled over its JSON IPC socket. It starts lazily on the first load and runs with video off and a small demuxer cache (keeping the app around 200 MB is a stated goal). Commands sent before the socket connects are queued in `m_pending`.
 - **Mpris** (`mpris.cpp`, Linux only, QtDBus): `org.mpris.MediaPlayer2.drift` with the root and Player interfaces, driving `Backend`. Media keys and Omarchy's bar go through it. `PropertiesChanged` is sent by hand from `Backend` signals; position isn't announced per tick, only `Seeked` on jumps.
-- **Smtc** (`smtc.cpp`, Windows only, C++/WinRT from the Windows SDK, linked with `windowsapp`): the same controls through System Media Transport Controls, taken from a `MediaPlayer` with its playback disabled since there's no window handle in the background. WinRT headers stay out of `smtc.h` (pimpl), and button presses arrive on a Windows thread, so they're queued to Qt's. The play/pause and next media keys, and Alt+X / Alt+C for the same (picked to stay clear of CS2's binds), are global hotkeys via `RegisterHotKey`, since SMTC alone didn't deliver the keys. A tray icon (QSystemTrayIcon, so Windows builds use QApplication and Widgets) brings back a closed window, pauses, skips and quits.
+- **Smtc** (`smtc.cpp`, Windows only, C++/WinRT from the Windows SDK, linked with `windowsapp`): the same controls through System Media Transport Controls, taken from a `MediaPlayer` with its playback disabled since there's no window handle in the background. WinRT headers stay out of `smtc.h` (pimpl), and button presses arrive on a Windows thread, so they're queued to Qt's. The play/pause and next media keys, and Alt+X / Alt+C for the same and Alt+V / Alt+B for volume down / up (picked to stay clear of CS2's binds), are global hotkeys via `RegisterHotKey`, since SMTC alone didn't deliver the keys. A tray icon (QSystemTrayIcon, so Windows builds use QApplication and Widgets) brings back a closed window, pauses, skips and quits.
+- **Discord** (`discord.cpp`, every platform): Rich Presence over Discord's local IPC socket (`\\.\pipe\discord-ipc-N`, or `discord-ipc-N` in the runtime dir), spoken by hand on a QLocalSocket: an 8-byte little-endian opcode and length, then JSON. It never polls: Discord is looked for only when a track starts or resumes, changes are collected for a second into one `SET_ACTIVITY`, and Discord draws the progress bar from the start/end times, so position ticks only compare against what was sent (a seek or slow load resends). Pausing clears the activity. `kClientId` is Drift's application in Discord's developer portal; the D key toggles the `discord` setting.
 - **process.h**: `findTool` prefers a binary next to `drift.exe` (the Windows bundle) over PATH. `hideConsole` must be applied to every QProcess so Windows doesn't flash a console.
 - **Theme** follows Omarchy: the accent comes from `~/.local/state/omarchy/current`, watched with QFileSystemWatcher, and window rounding from `hyprctl -j getoption decoration:rounding`.
 - **Translator** is a custom QTranslator that reads flat JSON catalogs in `src/i18n/<omarchy-lang>.json` (English source text → translation; plural strings map to CLDR-category objects). The language comes from `~/.config/omarchy/language` (system locale on Windows). Changing it calls `engine.retranslate()`, so keep plain `qsTr()` in QML and `tr()` in C++, and add new strings to every catalog (`en.json`, `ru.json`).
