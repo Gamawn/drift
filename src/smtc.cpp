@@ -23,20 +23,23 @@ winrt::hstring wide(const QString &text) { return winrt::hstring(text.toStdWStri
 struct Hotkeys : QAbstractNativeEventFilter {
     struct Key {
         UINT modifiers, code;
-        void (Backend::*action)();
+        void (*action)(Backend *);
     };
     static constexpr Key keys[] = {
-        {0, VK_MEDIA_PLAY_PAUSE, &Backend::togglePause},
-        {0, VK_MEDIA_NEXT_TRACK, &Backend::next},
+        {MOD_NOREPEAT, VK_MEDIA_PLAY_PAUSE, [](Backend *backend) { backend->togglePause(); }},
+        {MOD_NOREPEAT, VK_MEDIA_NEXT_TRACK, [](Backend *backend) { backend->next(); }},
         // CS2 leaves Alt unbound, so these don't fight the game; Alt+Z is NVIDIA's overlay.
-        {MOD_ALT, 'X', &Backend::togglePause},
-        {MOD_ALT, 'C', &Backend::next},
+        {MOD_ALT | MOD_NOREPEAT, 'X', [](Backend *backend) { backend->togglePause(); }},
+        {MOD_ALT | MOD_NOREPEAT, 'C', [](Backend *backend) { backend->next(); }},
+        // Volume repeats while held. The keyboard's own volume keys stay with Windows.
+        {MOD_ALT, 'V', [](Backend *backend) { backend->changeVolume(-5); }},
+        {MOD_ALT, 'B', [](Backend *backend) { backend->changeVolume(5); }},
     };
     Backend *backend;
 
     explicit Hotkeys(Backend *backend) : backend(backend) {
         for (int id = 0; id < int(std::size(keys)); ++id)
-            if (!RegisterHotKey(nullptr, id, keys[id].modifiers | MOD_NOREPEAT, keys[id].code))
+            if (!RegisterHotKey(nullptr, id, keys[id].modifiers, keys[id].code))
                 qWarning("Drift couldn't take hotkey 0x%x+0x%x, another app holds it", keys[id].modifiers, keys[id].code);
         QCoreApplication::instance()->installNativeEventFilter(this);
     }
@@ -49,7 +52,7 @@ struct Hotkeys : QAbstractNativeEventFilter {
         const MSG *msg = static_cast<const MSG *>(message);
         if (msg->message != WM_HOTKEY || msg->wParam >= std::size(keys))
             return false;
-        (backend->*keys[msg->wParam].action)();
+        keys[msg->wParam].action(backend);
         return true;
     }
 };
