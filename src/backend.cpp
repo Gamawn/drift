@@ -123,6 +123,8 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
             if (position != m_position) {
                 m_position = position;
                 emit positionChanged();
+                if (position > 0)
+                    resolveNext();
             }
         } else if (name == "duration" && !value.isNull() && int(value.toDouble()) != m_duration) {
             m_duration = int(value.toDouble());
@@ -469,6 +471,9 @@ void Backend::playNext() {
 
 void Backend::resolveNext() {
     if (m_queue.isEmpty() || m_resolve.state() != QProcess::NotRunning || m_streamId == m_queue.first().id)
+        return;
+    // Until a watch URL plays, mpv's own yt-dlp is running; a second one at once doubles the peak memory.
+    if (!m_current.id.isEmpty() && !m_loadedStream && m_position == 0)
         return;
     m_resolvingId = m_queue.first().id;
     m_resolve.start(m_ytdlp, {"-f", "bestaudio/best", "-g", "--no-playlist", "--no-warnings", "--", watchUrl(m_resolvingId)});
