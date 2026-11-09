@@ -42,3 +42,6 @@ linux {
     HEADERS += src/mpris.h
     SOURCES += src/mpris.cpp
 }
+
+DISTFILES += \
+    TODO.md

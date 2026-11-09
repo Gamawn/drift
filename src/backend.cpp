@@ -89,6 +89,7 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
     m_playlistUrl = settings.value("playlistUrl").toString();
     m_volume = std::clamp(settings.value("volume", 80).toInt(), 0, 100);
     m_mpv.command({"set_property", "volume", m_volume});
+
     hideConsole(m_fetch);
     hideConsole(m_resolve);
 
@@ -196,7 +197,7 @@ QList<Track> Backend::parseRadio(const QByteArray &json) {
     QList<QJsonObject> renderers;
     collectRenderers(QJsonDocument::fromJson(json).object(), "playlistPanelVideoRenderer", renderers);
     QList<Track> tracks;
-    for (const auto &renderer : renderers) {
+    for (const auto &renderer : std::as_const(renderers)) {
         Track track;
         track.id = renderer.value("videoId").toString();
         track.title = runs(renderer.value("title"));
@@ -213,7 +214,7 @@ QList<Track> Backend::parseSearch(const QByteArray &json) {
     QList<QJsonObject> renderers;
     collectRenderers(QJsonDocument::fromJson(json).object(), "musicResponsiveListItemRenderer", renderers);
     QList<Track> tracks;
-    for (const auto &renderer : renderers) {
+    for (const auto &renderer : std::as_const(renderers)) {
         const auto columns = renderer.value("flexColumns").toArray();
         auto column = [&](int i) { return runs(columns.at(i).toObject().value("musicResponsiveListItemFlexColumnRenderer").toObject().value("text")); };
         Track track;

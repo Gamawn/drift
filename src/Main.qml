@@ -135,6 +135,13 @@ ApplicationWindow {
                         asynchronous: true
                         cache: false
                     }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: backend.current.id !== undefined
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.togglePause()
+                    }
                 }
 
                 ColumnLayout {
@@ -379,7 +386,8 @@ ApplicationWindow {
                             ["Q", qsTr("Quit")]
                         ].concat(Qt.platform.os === "windows" ? [ // global hotkeys, see smtc.cpp
                             ["Alt+X", qsTr("Play or pause, from anywhere")],
-                            ["Alt+C", qsTr("Next track, from anywhere")]
+                            ["Alt+C", qsTr("Next track, from anywhere")],
+                            ["Alt+V  Alt+B", qsTr("Volume down or up, from anywhere")]
                         ] : [])
                         delegate: RowLayout {
                             required property var modelData
