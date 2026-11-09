@@ -21,6 +21,7 @@ Mpv::Mpv(const QString &program, QObject *parent) : QObject(parent), m_program(p
     QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (runtime.isEmpty())
         runtime = QDir::tempPath();
+    QDir().mkpath(runtime); // macOS gives ~/Library/Application Support, missing under Qt test mode
     m_socketPath = QString("%1/drift-mpv-%2.sock").arg(runtime).arg(QCoreApplication::applicationPid());
 #endif
     hideConsole(m_process);

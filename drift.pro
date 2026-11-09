@@ -1,6 +1,7 @@
 QT += core gui network qml quick quickcontrols2
 
 CONFIG += c++17 release
+CONFIG -= app_bundle # macOS: a plain build/drift binary, as on Linux
 TARGET = drift
 TEMPLATE = app
 

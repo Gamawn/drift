@@ -1,5 +1,6 @@
 QT += core gui network quick quickcontrols2 testlib
 CONFIG += c++17 testcase
+CONFIG -= app_bundle # macOS: bin/test runs ./drift_tests
 TARGET = drift_tests
 TEMPLATE = app
 
