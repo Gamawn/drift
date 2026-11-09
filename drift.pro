@@ -30,7 +30,7 @@ win32 {
     QT += widgets # the tray icon
     HEADERS += src/smtc.h
     SOURCES += src/smtc.cpp
-    LIBS += -lwindowsapp
+    LIBS += -lwindowsapp -luser32 # user32: the global hotkeys
 }
 
 # MPRIS: media keys and Omarchy's bar. Windows gets its own media controls separately.
