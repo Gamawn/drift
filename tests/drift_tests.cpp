@@ -12,6 +12,7 @@
 #include <QtTest>
 
 #include "backend.h"
+#include "discord.h"
 #ifdef Q_OS_LINUX
 #include <QDBusConnection>
 #include <QDBusInterface>
@@ -96,6 +97,36 @@ private slots:
         Track audio{"y", "Never Gonna Give You Up", "Rick Astley"};
         QCOMPARE(Backend::songKey(video), Backend::songKey(audio));
         QCOMPARE(Backend::songKey(Track{"z", "(Intro)", ""}), QString("z"));
+    }
+
+    void discordFramesCarryOpcodeAndLength()
+    {
+        const QByteArray frame = Discord::frame(1, {{"cmd", "SET_ACTIVITY"}});
+        const QByteArray json = R"({"cmd":"SET_ACTIVITY"})";
+        QCOMPARE(frame.left(4), QByteArray("\x01\x00\x00\x00", 4));
+        QCOMPARE(frame.mid(4, 4), QByteArray("\x16\x00\x00\x00", 4));
+        QCOMPARE(frame.mid(8), json);
+    }
+
+    void discordActivityShowsTheTrackAndItsProgress()
+    {
+        const QVariantMap track{{"id", "pRpeEdMmmQ0"}, {"title", "Waka Waka"}, {"artist", "Shakira"}};
+        const QJsonObject activity = Discord::activity(track, 30, 211, 1000000);
+        QCOMPARE(activity.value("type").toInt(), 2);
+        QCOMPARE(activity.value("details").toString(), QString("Waka Waka"));
+        QCOMPARE(activity.value("state").toString(), QString("Shakira"));
+        const QJsonObject times = activity.value("timestamps").toObject();
+        QCOMPARE(times.value("start").toInteger(), 970000);
+        QCOMPARE(times.value("end").toInteger(), 1181000);
+        QVERIFY(activity.value("assets").toObject().value("large_image").toString().contains("pRpeEdMmmQ0"));
+
+        // Discord refuses text under 2 or over 128 characters, and an empty state.
+        const QJsonObject odd = Discord::activity({{"id", "x"}, {"title", "A"}, {"artist", ""}}, 0, 0, 0);
+        QCOMPARE(odd.value("details").toString().size(), 2);
+        QVERIFY(!odd.contains("state"));
+        QVERIFY(!odd.contains("timestamps"));
+        const QJsonObject wordy = Discord::activity({{"id", "x"}, {"title", QString(300, 'a')}}, 0, 0, 0);
+        QCOMPARE(wordy.value("details").toString().size(), 128);
     }
 
     void radioSkipsSeedAndRepeatsAndCaps()
