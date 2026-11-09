@@ -6,8 +6,8 @@ TEMPLATE = app
 
 INCLUDEPATH += ../src
 
-HEADERS += ../src/backend.h ../src/discord.h ../src/mpv.h ../src/process.h ../src/theme.h ../src/translator.h
-SOURCES += drift_tests.cpp ../src/backend.cpp ../src/discord.cpp ../src/mpv.cpp ../src/theme.cpp ../src/translator.cpp
+HEADERS += ../src/backend.h ../src/discord.h ../src/mpv.h ../src/process.h ../src/theme.h ../src/translator.h ../src/updater.h
+SOURCES += drift_tests.cpp ../src/backend.cpp ../src/discord.cpp ../src/mpv.cpp ../src/theme.cpp ../src/translator.cpp ../src/updater.cpp
 
 # MPRIS: media keys and Omarchy's bar. Windows gets its own media controls separately.
 linux {

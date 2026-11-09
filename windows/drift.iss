@@ -28,6 +28,8 @@ SolidCompression=yes
 WizardStyle=modern
 ; Drift may be playing in the background with its window closed.
 CloseApplications=force
+; Drift looks for this to stay out of the way while its files are being replaced.
+SetupMutex=DriftSetup
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
@@ -45,4 +47,14 @@ Name: "{autoprograms}\Drift"; Filename: "{app}\drift.exe"
 Name: "{autodesktop}\Drift"; Filename: "{app}\drift.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\drift.exe"; Description: "{cm:LaunchProgram,Drift}"; Flags: nowait postinstall skipifsilent
+; --from-setup: the installer is still running when it starts Drift, which otherwise stays out of its way.
+Filename: "{app}\drift.exe"; Parameters: "--from-setup"; Description: "{cm:LaunchProgram,Drift}"; Flags: nowait postinstall skipifsilent
+; Drift's own updater runs the installer silently with /RELAUNCH=1. As the user,
+; not with the rights an all-users install gives the installer.
+Filename: "{app}\drift.exe"; Parameters: "--from-setup"; Flags: nowait runasoriginaluser; Check: Relaunch
+
+[Code]
+function Relaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;

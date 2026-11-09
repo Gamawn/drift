@@ -48,5 +48,9 @@
   "Couldn't search YouTube Music: %1": "Не удалось выполнить поиск в YouTube Music: %1",
   "Paste a playlist link or search for a song": "Вставьте ссылку на плейлист или найдите песню",
   "Couldn't play several tracks in a row. Press N to try again.": "Несколько треков подряд не удалось воспроизвести. Нажмите N, чтобы попробовать снова.",
-  "YouTube Music returned no tracks.": "YouTube Music не вернул ни одного трека."
+  "YouTube Music returned no tracks.": "YouTube Music не вернул ни одного трека.",
+  "Drift %1 is ready to install": "Drift %1 готов к установке",
+  "Drift %1 is out": "Вышел Drift %1",
+  "Restart and update": "Перезапустить и обновить",
+  "Download the update": "Скачать обновление"
 }

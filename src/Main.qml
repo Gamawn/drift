@@ -118,6 +118,26 @@ ApplicationWindow {
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: updater.version !== ""
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    text: (updater.ready ? qsTr("Drift %1 is ready to install") : qsTr("Drift %1 is out")).arg(updater.version)
+                    opacity: 0.7
+                    elide: Text.ElideRight
+                }
+                Button {
+                    text: updater.ready ? qsTr("Restart and update") : qsTr("Download the update")
+                    flat: true
+                    focusPolicy: Qt.NoFocus
+                    Material.roundedScale: theme.radius
+                    onClicked: updater.install()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
                 spacing: 20
 
                 // shortcut: the cover keeps square corners when Hyprland rounds windows; mask it if that matters.
