@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Where Discord's "Listen in Drift" button leads (GitHub Pages, master /docs):
+     ?v=<video id> is handed to the visitor's own Drift as drift://play/<id>. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drift</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #121212; color: #e6e6e6;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { width: min(360px, calc(100% - 32px)); text-align: center; }
+  img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; background: #1e1e1e; }
+  h1 { font-size: 22px; margin: 20px 0 4px; }
+  p { margin: 0 0 20px; color: #a0a0a0; }
+  a { display: block; margin-top: 10px; padding: 12px; border-radius: 10px; color: #e6e6e6; text-decoration: none; background: #242424; }
+  a.main { background: #7aa2f7; color: #121212; font-weight: 600; }
+  a:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+<main>
+  <img id="cover" alt="" hidden>
+  <h1 id="title">Drift</h1>
+  <p id="hint"></p>
+  <a id="open" class="main" hidden></a>
+  <a id="music" hidden></a>
+  <a id="download" href="https://github.com/Gamawn/drift/releases/latest"></a>
+</main>
+<script>
+  const ru = navigator.language.startsWith("ru");
+  const text = ru
+    ? { open: "Открыть в Drift", music: "Слушать в YouTube Music", download: "Скачать Drift",
+        hint: "Открываем трек в Drift… Если ничего не произошло, Drift не установлен.",
+        none: "Бесконечное радио YouTube Music по вашему плейлисту." }
+    : { open: "Open in Drift", music: "Listen on YouTube Music", download: "Download Drift",
+        hint: "Opening the track in Drift… If nothing happens, Drift isn't installed.",
+        none: "Endless YouTube Music radio from one of your playlists." };
+  const id = new URLSearchParams(location.search).get("v") || "";
+  const el = name => document.getElementById(name);
+  document.documentElement.lang = ru ? "ru" : "en";
+  el("download").textContent = text.download;
+  if (/^[A-Za-z0-9_-]{11}$/.test(id)) {
+    const link = "drift://play/" + id;
+    el("cover").src = "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg";
+    el("cover").hidden = false;
+    el("hint").textContent = text.hint;
+    el("open").textContent = text.open;
+    el("open").href = link;
+    el("open").hidden = false;
+    el("music").textContent = text.music;
+    el("music").href = "https://music.youtube.com/watch?v=" + id;
+    el("music").hidden = false;
+    location.href = link;
+  } else {
+    el("hint").textContent = text.none;
+  }
+</script>
+</body>
+</html>

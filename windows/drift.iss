@@ -46,6 +46,12 @@ Source: "..\dist\Drift\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Name: "{autoprograms}\Drift"; Filename: "{app}\drift.exe"
 Name: "{autodesktop}\Drift"; Filename: "{app}\drift.exe"; Tasks: desktopicon
 
+[Registry]
+; drift://play/<id> links, where Discord's "Listen in Drift" button ends up.
+Root: HKA; Subkey: "Software\Classes\drift"; ValueType: string; ValueName: ""; ValueData: "URL:Drift"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\drift"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\drift\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\drift.exe"" ""%1"""
+
 [Run]
 ; --from-setup: the installer is still running when it starts Drift, which otherwise stays out of its way.
 Filename: "{app}\drift.exe"; Parameters: "--from-setup"; Description: "{cm:LaunchProgram,Drift}"; Flags: nowait postinstall skipifsilent

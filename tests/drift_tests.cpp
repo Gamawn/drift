@@ -1,5 +1,6 @@
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QNetworkProxy>
@@ -100,6 +101,20 @@ private slots:
         QCOMPARE(Backend::songKey(Track{"z", "(Intro)", ""}), QString("z"));
     }
 
+    void readsADriftLink()
+    {
+        QCOMPARE(Backend::linkId("drift://play/pRpeEdMmmQ0"), QString("pRpeEdMmmQ0"));
+        QCOMPARE(Backend::linkId("drift://play/pRpeEdMmmQ0/\n"), QString("pRpeEdMmmQ0"));
+        QCOMPARE(Backend::linkId("drift://play/a_b-c_d-e_f"), QString("a_b-c_d-e_f"));
+        // Anything else, a longer id or one with an option's dashes and spaces included, is no link.
+        QCOMPARE(Backend::linkId(""), QString());
+        QCOMPARE(Backend::linkId("--from-setup"), QString());
+        QCOMPARE(Backend::linkId("https://music.youtube.com/watch?v=pRpeEdMmmQ0"), QString());
+        QCOMPARE(Backend::linkId("drift://play/pRpeEdMmmQ0x"), QString());
+        QCOMPARE(Backend::linkId("drift://play/short"), QString());
+        QCOMPARE(Backend::linkId("drift://play/--exec rm -"), QString());
+    }
+
     void discordFramesCarryOpcodeAndLength()
     {
         const QByteArray frame = Discord::frame(1, {{"cmd", "SET_ACTIVITY"}});
@@ -120,6 +135,11 @@ private slots:
         QCOMPARE(times.value("start").toInteger(), 970000);
         QCOMPARE(times.value("end").toInteger(), 1181000);
         QVERIFY(activity.value("assets").toObject().value("large_image").toString().contains("pRpeEdMmmQ0"));
+        // The first button's page turns into a drift:// link the viewer's own Drift opens.
+        const QJsonArray buttons = activity.value("buttons").toArray();
+        QCOMPARE(buttons.size(), 2);
+        QCOMPARE(buttons.at(0).toObject().value("url").toString(), QString("https://gamawn.github.io/drift/?v=pRpeEdMmmQ0"));
+        QCOMPARE(buttons.at(1).toObject().value("url").toString(), QString("https://music.youtube.com/watch?v=pRpeEdMmmQ0"));
 
         // Discord refuses text under 2 or over 128 characters, and an empty state.
         const QJsonObject odd = Discord::activity({{"id", "x"}, {"title", "A"}, {"artist", ""}}, 0, 0, 0);

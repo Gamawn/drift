@@ -58,6 +58,8 @@ public:
     Q_INVOKABLE void clearResults();
     // Endless radio of songs like this search result.
     Q_INVOKABLE void playSimilar(int index);
+    // The same radio for a track known only by its id, as a drift:// link gives it.
+    void playId(const QString &id);
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void next();
     // Plays this track from Up next now and rebuilds Up next from its radio.
@@ -73,6 +75,8 @@ public:
     static QList<Track> parseSearch(const QByteArray &json);
     Q_INVOKABLE static bool isLink(const QString &text);
     static QString songKey(const Track &track);
+    // The video id in a drift://play/<id> link, or nothing for anything else.
+    static QString linkId(const QString &link);
     void setSeeds(const QList<Track> &seeds);
     Track nextSeed();
     void addRadio(const Track &seed, const QList<Track> &mix);
@@ -93,6 +97,7 @@ signals:
 private:
     void playlistLoaded(int code, QProcess::ExitStatus status);
     void mixLoaded();
+    void playSong(const Track &song);
     void reset();
     void refill();
     void fetchMix(const Track &seed);
