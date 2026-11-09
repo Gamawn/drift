@@ -27,6 +27,7 @@ win32 {
     # needs C++20, as MSVC refuses the experimental coroutines it uses under C++17.
     CONFIG -= c++17
     CONFIG += c++20
+    QT += widgets # the tray icon
     HEADERS += src/smtc.h
     SOURCES += src/smtc.cpp
     LIBS += -lwindowsapp

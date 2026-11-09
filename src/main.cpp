@@ -19,6 +19,10 @@
 #endif
 #include "process.h"
 #ifdef Q_OS_WIN
+#include <QApplication>
+#include <QMenu>
+#include <QSystemTrayIcon>
+#include <qt_windows.h>
 #include "smtc.h"
 #endif
 #include "theme.h"
@@ -30,7 +34,11 @@ int main(int argc, char *argv[]) {
     // only to hand us a font; Material and the Omarchy accent replace the rest.
     qunsetenv("QT_QPA_PLATFORMTHEME");
 #endif
+#ifdef Q_OS_WIN
+    QApplication app(argc, argv); // the tray icon and its menu are Widgets
+#else
     QGuiApplication app(argc, argv);
+#endif
 #ifdef Q_OS_LINUX
     // shortcut: fixed to GTK's default font, so a changed GTK font isn't followed; read gsettings if that matters.
     app.setFont(QFont(QStringList{"Adwaita Sans", "sans-serif"}, 11));
@@ -111,6 +119,37 @@ int main(int argc, char *argv[]) {
 #endif
 #ifdef Q_OS_WIN
     Smtc smtc(&backend);
+
+    // A closed window keeps the music going, so the tray is the way back to it, or out.
+    // IDI_ICON1 is the icon qmake's RC_ICONS puts in drift.exe.
+    QSystemTrayIcon tray(QIcon(QPixmap::fromImage(QImage::fromHICON(LoadIconW(GetModuleHandleW(nullptr), L"IDI_ICON1")))));
+    QMenu menu;
+    QAction *showAction = menu.addAction(QString(), show);
+    QAction *pauseAction = menu.addAction(QString(), &backend, &Backend::togglePause);
+    QAction *nextAction = menu.addAction(QString(), &backend, &Backend::next);
+    menu.addSeparator();
+    QAction *quitAction = menu.addAction(QString(), &app, &QCoreApplication::quit);
+    auto updateTray = [&] {
+        const QVariantMap current = backend.current();
+        showAction->setText(QCoreApplication::translate("main", "Show Drift"));
+        pauseAction->setText(QCoreApplication::translate("main", backend.playing() ? "Pause" : "Play"));
+        nextAction->setText(QCoreApplication::translate("main", "Next"));
+        quitAction->setText(QCoreApplication::translate("main", "Quit"));
+        pauseAction->setEnabled(!current.isEmpty());
+        nextAction->setEnabled(!current.isEmpty());
+        tray.setToolTip(current.isEmpty() ? QStringLiteral("Drift")
+                                          : current.value("title").toString() + " — " + current.value("artist").toString());
+    };
+    updateTray();
+    QObject::connect(&backend, &Backend::currentChanged, &tray, updateTray);
+    QObject::connect(&backend, &Backend::playingChanged, &tray, updateTray);
+    QObject::connect(&translator, &Translator::changed, &tray, updateTray);
+    QObject::connect(&tray, &QSystemTrayIcon::activated, &tray, [&](QSystemTrayIcon::ActivationReason reason) {
+        if (reason == QSystemTrayIcon::Trigger)
+            show();
+    });
+    tray.setContextMenu(&menu);
+    tray.show();
 #endif
 
     show();
