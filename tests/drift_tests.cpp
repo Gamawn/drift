@@ -246,6 +246,39 @@ private slots:
         QVERIFY(backend.current().isEmpty());
     }
 
+    void nextStreamWaitsForCurrentToPlay()
+    {
+        if (QStandardPaths::findExecutable("python3").isEmpty())
+            QSKIP("needs python3 for the fake mpv");
+        QTemporaryDir dir;
+        const QString log = dir.filePath("resolves");
+        const QString ytdlp = script(dir.filePath("yt-dlp"),
+            "#!/bin/sh\ncase \"$*\" in *v=second*) echo >> '" + log.toUtf8() + "';; esac\nexit 1\n");
+        // Plays a second after each loadfile, as mpv does once its own yt-dlp has found the stream.
+        const QString mpv = script(dir.filePath("mpv"), "#!/usr/bin/env python3\n"
+            "import json, socket, sys, time\n"
+            "path = [a.split('=', 1)[1] for a in sys.argv if a.startswith('--input-ipc-server=')][0]\n"
+            "server = socket.socket(socket.AF_UNIX); server.bind(path); server.listen(1)\n"
+            "conn, _ = server.accept()\n"
+            "for line in conn.makefile('rb'):\n"
+            "    if json.loads(line).get('command', [''])[0] == 'loadfile':\n"
+            "        time.sleep(1)\n"
+            "        conn.sendall(b'{\"event\":\"property-change\",\"name\":\"time-pos\",\"data\":1.5}\\n')\n");
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+
+        Backend backend(ytdlp, mpv);
+        const Track seed{"s", "Seed", "A"};
+        backend.setSeeds({seed});
+        backend.addRadio(seed, {{"first", "First", "C"}, {"second", "Second", "C"}});
+        backend.togglePause();
+        QCOMPARE(backend.current().value("id").toString(), QString("first"));
+        QTest::qWait(500);
+        QCOMPARE(lines(log), 0); // mpv's own yt-dlp is still finding "first"
+        QTRY_COMPARE(lines(log), 1);
+    }
+
     void mixLookupWaitsAfterFailure()
     {
         QTemporaryDir dir;
