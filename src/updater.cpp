@@ -4,10 +4,12 @@
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
@@ -17,6 +19,7 @@
 #include <QVersionNumber>
 
 #include <memory>
+#include <utility>
 
 namespace {
 const char kLatest[] = "https://api.github.com/repos/Gamawn/drift/releases/latest";
@@ -38,6 +41,11 @@ QByteArray hashOf(const QString &path) {
     if (!file.open(QIODevice::ReadOnly) || !hash.addData(&file))
         return {};
     return hash.result().toHex();
+}
+
+// /SILENT leaves only the progress window; /RELAUNCH is drift.iss's own and starts Drift again.
+QStringList arguments() {
+    return {"/SILENT", "/NORESTART", "/RELAUNCH=1"};
 }
 
 // Only a copy the installer put there can be updated by running the installer again.
@@ -106,21 +114,47 @@ bool Updater::installPending() {
         return false;
     if (expected.isEmpty() || hashOf(path) != expected)
         return forget();
-    return run(path, version);
+    settings.setValue("update/attempted", version);
+    settings.sync();
+    // Drift stays, still taking a second launch's connection, until the installer
+    // closes it to replace its files. An installer that gives up instead (a
+    // refused UAC prompt, Cancel) hands this launch back.
+    auto *installer = new QProcess;
+    installer->start(path, arguments());
+    if (installer->waitForStarted()) {
+        QEventLoop wait;
+        connect(installer, &QProcess::finished, &wait, &QEventLoop::quit);
+        wait.exec();
+    }
+    // Asked to quit for the installer, which a deleted QProcess would take along.
+    if (installer->state() != QProcess::NotRunning)
+        return true;
+    delete installer;
+    return false;
 }
 
 void Updater::check() {
-    if (m_busy || m_ready)
+    if (m_busy)
         return;
     m_busy = true;
-    QNetworkReply *reply = m_network.get(request(QUrl(kLatest)));
+    // Only for the length of a check: a manager kept around holds on to its connections.
+    m_network = new QNetworkAccessManager(this);
+    QNetworkReply *reply = m_network->get(request(QUrl(kLatest)));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         const Release release =
             reply->error() == QNetworkReply::NoError ? parseRelease(reply->readAll()) : Release();
-        if (!isNewer(release.version, QCoreApplication::applicationVersion())) {
-            m_busy = false;
+        // Nothing newer, or the one already waiting for the button.
+        if (!isNewer(release.version, QCoreApplication::applicationVersion())
+            || (m_ready && release.version == m_release.version)) {
+            done();
             return;
+        }
+        // Newer than the one on offer, which is withdrawn while this one downloads.
+        if (m_ready) {
+            m_ready = false;
+            m_version.clear();
+            emit changed();
         }
         m_release = release;
         if (!installed() || release.installer.isEmpty()) {
@@ -129,8 +163,10 @@ void Updater::check() {
         }
         m_path = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
                      .filePath(QString("Drift-setup-%1.exe").arg(release.version));
-        // Still there from a run that ended before the update was installed.
-        if (hashOf(m_path) == release.sha256)
+        // Downloaded and checked by an earlier run; install() checks it once more.
+        const QSettings settings;
+        if (settings.value("update/installer").toString() == m_path
+            && settings.value("update/sha256").toByteArray() == release.sha256 && QFile::exists(m_path))
             offer(true);
         else
             download();
@@ -147,7 +183,7 @@ void Updater::download() {
     }
     // Hashed as it arrives: the installer is some 100 MB, a pause if read back in one go.
     auto hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
-    QNetworkReply *reply = m_network.get(request(m_release.installer));
+    QNetworkReply *reply = m_network->get(request(m_release.installer));
     auto save = [reply, file, hash] {
         const QByteArray data = reply->readAll();
         file->write(data);
@@ -158,11 +194,21 @@ void Updater::download() {
         reply->deleteLater();
         file->deleteLater();
         save();
-        if (reply->error() != QNetworkReply::NoError || hash->result().toHex() != m_release.sha256 || !file->commit()) {
+        if (reply->error() != QNetworkReply::NoError) {
+            // A dropped connection isn't worth sending the user to the release page.
+            done();
+            QTimer::singleShot(60 * 60 * 1000, this, &Updater::check);
+            return;
+        }
+        if (hash->result().toHex() != m_release.sha256 || !file->commit()) {
             offer(false);
             return;
         }
         QSettings settings;
+        // The installer of a version that was never installed.
+        const QString previous = settings.value("update/installer").toString();
+        if (previous != m_path)
+            QFile::remove(previous);
         settings.setValue("update/version", m_release.version);
         settings.setValue("update/installer", m_path);
         settings.setValue("update/sha256", m_release.sha256);
@@ -173,10 +219,16 @@ void Updater::download() {
 // Without the installer in hand the release page is still worth pointing to;
 // the next check tries the download again.
 void Updater::offer(bool ready) {
-    m_busy = false;
+    done();
     m_version = m_release.version;
     m_ready = ready;
     emit changed();
+}
+
+void Updater::done() {
+    m_busy = false;
+    if (QNetworkAccessManager *network = std::exchange(m_network, nullptr))
+        network->deleteLater();
 }
 
 void Updater::install() {
@@ -186,14 +238,15 @@ void Updater::install() {
         QDesktopServices::openUrl(m_release.page);
         return;
     }
-    if (run(m_path, m_release.version))
+    // Checked here rather than when found on disk: reading some 100 MB would stall the window.
+    if (hashOf(m_path) != m_release.sha256) {
+        QFile::remove(m_path);
+        offer(false);
+        return;
+    }
+    QSettings().setValue("update/attempted", m_release.version);
+    if (QProcess::startDetached(m_path, arguments()))
         QCoreApplication::quit();
     else
         offer(false);
-}
-
-bool Updater::run(const QString &path, const QString &version) {
-    QSettings().setValue("update/attempted", version);
-    // /SILENT leaves only the progress window; /RELAUNCH is drift.iss's own and starts Drift again.
-    return QProcess::startDetached(path, {"/SILENT", "/NORESTART", "/RELAUNCH=1"});
 }

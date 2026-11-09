@@ -1,9 +1,10 @@
 #pragma once
 
-#include <QNetworkAccessManager>
 #include <QObject>
 #include <QTimer>
 #include <QUrl>
+
+class QNetworkAccessManager;
 
 // Follows Drift's releases on GitHub. A copy put there by the Windows installer
 // downloads the newer installer in the background, checks it against the
@@ -30,8 +31,9 @@ public:
     QString version() const { return m_version; }
     bool ready() const { return m_ready; }
 
-    // Runs an update downloaded by an earlier run. True means the installer is
-    // taking over and Drift should exit; the installer starts it again.
+    // Runs an update downloaded by an earlier run and waits for it. True means
+    // the installer is taking over and Drift should exit; the installer starts it
+    // again. False also when the installer gave up, and this launch goes on.
     bool installPending();
     void check();
     Q_INVOKABLE void install();
@@ -46,9 +48,9 @@ signals:
 private:
     void download();
     void offer(bool ready);
-    bool run(const QString &path, const QString &version);
+    void done();
 
-    QNetworkAccessManager m_network;
+    QNetworkAccessManager *m_network = nullptr;
     // Drift stays in the tray for days, so launch isn't the only time to look.
     QTimer m_daily;
     bool m_busy = false;

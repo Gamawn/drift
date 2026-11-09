@@ -172,25 +172,37 @@ private slots:
 
     void updaterForgetsAnInstalledUpdate()
     {
+        // In a file of its own: on Windows QSettings is the registry, which test mode leaves alone,
+        // and it keeps nothing at all for an application without an organization.
         QTemporaryDir dir;
+        const auto restore = qScopeGuard([] {
+            QSettings::setDefaultFormat(QSettings::NativeFormat);
+            QCoreApplication::setOrganizationName(QString());
+            QCoreApplication::setApplicationVersion(QString());
+        });
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+        QCoreApplication::setOrganizationName("drift-tests");
+        QCoreApplication::setApplicationVersion("0.3.0");
+
         const QString path = dir.filePath("Drift-setup-0.4.0.exe");
         QFile file(path);
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
-        // Windows keeps no settings for an application without an organization.
-        QCoreApplication::setOrganizationName("drift-tests");
-        QCoreApplication::setApplicationVersion("0.4.0");
-        const auto restore = qScopeGuard([] {
-            QSettings().clear();
-            QCoreApplication::setOrganizationName(QString());
-            QCoreApplication::setApplicationVersion(QString());
-        });
         QSettings settings;
+        QVERIFY(settings.fileName().startsWith(dir.path()));
         settings.setValue("update/version", "0.4.0");
         settings.setValue("update/installer", path);
         settings.setValue("update/attempted", "0.4.0");
+        settings.sync();
 
+        // Tried once already: kept for the button, not run again at launch.
         Updater updater;
+        QVERIFY(!updater.installPending());
+        QVERIFY(QFile::exists(path));
+        QCOMPARE(QSettings().value("update/version").toString(), QString("0.4.0"));
+
+        QCoreApplication::setApplicationVersion("0.4.0");
         QVERIFY(!updater.installPending());
         QVERIFY(!QFile::exists(path));
         QVERIFY(!QSettings().contains("update/version"));

@@ -54,6 +54,17 @@ int main(int argc, char *argv[]) {
     app.setDesktopFileName("drift");
     app.setWindowIcon(QIcon::fromTheme("drift"));
 
+#ifdef Q_OS_WIN
+    // drift.iss's SetupMutex: the installer is replacing Drift's files right now.
+    // The copy it starts itself says so, as the installer is still there then.
+    if (!app.arguments().contains("--from-setup")) {
+        if (HANDLE setup = OpenMutexW(SYNCHRONIZE, FALSE, L"DriftSetup")) {
+            CloseHandle(setup);
+            return 0;
+        }
+    }
+#endif
+
     // One Drift at a time: launching it again only brings the running one's window back.
     const QString instance = "drift-" + qEnvironmentVariable("USER", qEnvironmentVariable("USERNAME"));
     QLocalSocket running;
