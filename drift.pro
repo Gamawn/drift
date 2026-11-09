@@ -11,7 +11,8 @@ HEADERS += \
     src/mpv.h \
     src/process.h \
     src/theme.h \
-    src/translator.h
+    src/translator.h \
+    src/updater.h
 
 SOURCES += \
     src/main.cpp \
@@ -19,7 +20,8 @@ SOURCES += \
     src/discord.cpp \
     src/mpv.cpp \
     src/theme.cpp \
-    src/translator.cpp
+    src/translator.cpp \
+    src/updater.cpp
 
 RESOURCES += src/resources.qrc
 

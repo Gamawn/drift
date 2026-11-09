@@ -21,6 +21,7 @@
 #endif
 #include "theme.h"
 #include "translator.h"
+#include "updater.h"
 
 class DriftTests : public QObject {
     Q_OBJECT
@@ -127,6 +128,73 @@ private slots:
         QVERIFY(!odd.contains("timestamps"));
         const QJsonObject wordy = Discord::activity({{"id", "x"}, {"title", QString(300, 'a')}}, 0, 0, 0);
         QCOMPARE(wordy.value("details").toString().size(), 128);
+    }
+
+    void updaterReadsAGitHubRelease()
+    {
+        // @ for the site: moc takes the two slashes of a URL in a raw string for a comment.
+        const auto release = Updater::parseRelease(QByteArray(R"json({"tag_name": "v0.4.0",
+            "html_url": "@/tag/v0.4.0", "assets": [
+            {"name": "Drift-setup-x64.exe", "digest": "sha256:HASH", "browser_download_url": "@/download/v0.4.0/Drift-setup-x64.exe"},
+            {"name": "Drift-windows-x64.zip", "digest": "sha256:00", "browser_download_url": "@/download/v0.4.0/Drift-windows-x64.zip"}
+        ]})json").replace("@", "https://github.com/Gamawn/drift/releases").replace("HASH", QByteArray(64, 'A')));
+        QCOMPARE(release.version, QString("0.4.0"));
+        QVERIFY(release.page.toString().endsWith("/tag/v0.4.0"));
+        QVERIFY(release.installer.toString().endsWith("/v0.4.0/Drift-setup-x64.exe"));
+        QCOMPARE(release.sha256, QByteArray(64, 'a'));
+
+        // Nothing is downloaded from outside Drift's own releases, and a tag never becomes a path.
+        const auto odd = Updater::parseRelease(QByteArray(R"json({"tag_name": "v1.0/../evil", "html_url": "@/", "assets": [
+            {"name": "Drift-setup-x64.exe", "digest": "sha256:HASH", "browser_download_url": "@/Drift-setup-x64.exe"}
+        ]})json").replace("@", "https://example.com").replace("HASH", QByteArray(64, 'a')));
+        QCOMPARE(odd.version, QString("1.0"));
+        QVERIFY(odd.installer.isEmpty());
+        QCOMPARE(odd.page, QUrl("https://github.com/Gamawn/drift/releases/latest"));
+        QVERIFY(Updater::parseRelease("rate limited").version.isEmpty());
+
+        // Without GitHub's hash of it the installer isn't taken.
+        const auto unhashed = Updater::parseRelease(QByteArray(R"json({"tag_name": "v0.4.0", "assets": [
+            {"name": "Drift-setup-x64.exe", "browser_download_url": "@/download/v0.4.0/Drift-setup-x64.exe"}
+        ]})json").replace("@", "https://github.com/Gamawn/drift/releases"));
+        QVERIFY(unhashed.installer.isEmpty());
+    }
+
+    void updaterComparesVersions()
+    {
+        QVERIFY(Updater::isNewer("0.4.0", "0.3.0"));
+        QVERIFY(Updater::isNewer("0.10.0", "0.9.1"));
+        QVERIFY(Updater::isNewer("1.0", "0.9.9"));
+        QVERIFY(!Updater::isNewer("0.3.0", "0.3.0"));
+        QVERIFY(!Updater::isNewer("0.3", "0.3.0"));
+        QVERIFY(!Updater::isNewer("0.2.9", "0.3.0"));
+        QVERIFY(!Updater::isNewer("", "0.3.0"));
+    }
+
+    void updaterForgetsAnInstalledUpdate()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("Drift-setup-0.4.0.exe");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        // Windows keeps no settings for an application without an organization.
+        QCoreApplication::setOrganizationName("drift-tests");
+        QCoreApplication::setApplicationVersion("0.4.0");
+        const auto restore = qScopeGuard([] {
+            QSettings().clear();
+            QCoreApplication::setOrganizationName(QString());
+            QCoreApplication::setApplicationVersion(QString());
+        });
+        QSettings settings;
+        settings.setValue("update/version", "0.4.0");
+        settings.setValue("update/installer", path);
+        settings.setValue("update/attempted", "0.4.0");
+
+        Updater updater;
+        QVERIFY(!updater.installPending());
+        QVERIFY(!QFile::exists(path));
+        QVERIFY(!QSettings().contains("update/version"));
+        QVERIFY(!QSettings().contains("update/attempted"));
     }
 
     void radioSkipsSeedAndRepeatsAndCaps()

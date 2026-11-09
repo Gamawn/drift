@@ -46,3 +46,11 @@ Name: "{autodesktop}\Drift"; Filename: "{app}\drift.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\drift.exe"; Description: "{cm:LaunchProgram,Drift}"; Flags: nowait postinstall skipifsilent
+; Drift's own updater runs the installer silently with /RELAUNCH=1, having quit to let it.
+Filename: "{app}\drift.exe"; Flags: nowait; Check: Relaunch
+
+[Code]
+function Relaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
