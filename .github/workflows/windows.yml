@@ -5,6 +5,9 @@ name: Release
 
 on:
   push:
+    # master too: a tag run can only restore caches saved on the default branch,
+    # so without it every release downloads Qt again.
+    branches: [master]
     tags: ['v*']
   workflow_dispatch:
 
@@ -24,17 +27,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Qt
-          key: qt-6.8.3-win64_msvc2022_64
+          key: qt-6.8.3-win64_msvc2022_64-base-declarative-svg
 
       - if: steps.qt-cache.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # Only the archives Drift links or deploys; skips Designer, Linguist, translations and software OpenGL.
       - if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 --outputdir Qt
+          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 --outputdir Qt --archives qtbase qtdeclarative qtsvg
 
       - run: echo "$env:GITHUB_WORKSPACE\Qt\6.8.3\msvc2022_64\bin" >> $env:GITHUB_PATH
 
@@ -44,6 +48,8 @@ jobs:
           mkdir build
           cd build
           qmake CONFIG-=debug_and_release ..\drift.pro
+          rem nmake runs one job; /MP lets cl compile each batch of sources on every core.
+          set CL=/MP
           nmake
 
       - name: Bundle
@@ -73,17 +79,24 @@ jobs:
 
           Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$dist/yt-dlp.exe"
           gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-x86_64-2*.7z' --dir mpv
-          7z x (Get-ChildItem mpv/*.7z | Select-Object -First 1).FullName -ompv/x
-          Copy-Item mpv/x/mpv.exe $dist
+          7z e (Get-ChildItem mpv/*.7z | Select-Object -First 1).FullName "-o$dist" mpv.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
           Copy-Item LICENSE, README.md $dist
-          Compress-Archive $dist Drift-windows-x64.zip
+          # 7z is several times faster than Compress-Archive.
+          7z a -tzip Drift-windows-x64.zip "./$dist"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Installer
         shell: pwsh
         run: |
-          choco install innosetup -y --no-progress
-          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Select-Object -First 1
+          # The runner image usually has Inno Setup already; choco is the fallback.
+          $find = { Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+          $iscc = & $find
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = & $find
+          }
           $version = (Select-String -Path pkgbuild/PKGBUILD -Pattern '^pkgver=(.+)$').Matches[0].Groups[1].Value
           & $iscc.FullName "/DAppVersion=$version" windows/drift.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -91,6 +104,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Drift-windows-x64
+          # Both files are already compressed.
+          compression-level: 0
           path: |
             Drift-setup-x64.exe
             Drift-windows-x64.zip
