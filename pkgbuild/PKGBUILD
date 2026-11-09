@@ -1,5 +1,5 @@
 pkgname=drift
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Endless YouTube Music radio from one of your playlists'
 arch=('x86_64' 'aarch64')

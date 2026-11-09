@@ -4,6 +4,10 @@
 #include <winrt/Windows.Media.Playback.h>
 #include <winrt/Windows.Storage.Streams.h>
 
+#include <QAbstractNativeEventFilter>
+#include <QCoreApplication>
+#include <qt_windows.h>
+
 #include "smtc.h"
 #include "backend.h"
 
@@ -13,7 +17,46 @@ namespace {
 winrt::hstring wide(const QString &text) { return winrt::hstring(text.toStdWString()); }
 }
 
+// System-wide hotkeys: the media keys, since SMTC alone doesn't get them to Drift
+// on every machine, and Alt combos by WASD for keyboards without them. A key
+// another app already holds is left to it.
+struct Hotkeys : QAbstractNativeEventFilter {
+    struct Key {
+        UINT modifiers, code;
+        void (Backend::*action)();
+    };
+    static constexpr Key keys[] = {
+        {0, VK_MEDIA_PLAY_PAUSE, &Backend::togglePause},
+        {0, VK_MEDIA_NEXT_TRACK, &Backend::next},
+        // CS2 leaves Alt unbound, so these don't fight the game; Alt+Z is NVIDIA's overlay.
+        {MOD_ALT, 'X', &Backend::togglePause},
+        {MOD_ALT, 'C', &Backend::next},
+    };
+    Backend *backend;
+
+    explicit Hotkeys(Backend *backend) : backend(backend) {
+        for (int id = 0; id < int(std::size(keys)); ++id)
+            if (!RegisterHotKey(nullptr, id, keys[id].modifiers | MOD_NOREPEAT, keys[id].code))
+                qWarning("Drift couldn't take hotkey 0x%x+0x%x, another app holds it", keys[id].modifiers, keys[id].code);
+        QCoreApplication::instance()->installNativeEventFilter(this);
+    }
+    ~Hotkeys() override {
+        for (int id = 0; id < int(std::size(keys)); ++id)
+            UnregisterHotKey(nullptr, id);
+    }
+    // RegisterHotKey without a window posts WM_HOTKEY to this thread's queue, which Qt passes here.
+    bool nativeEventFilter(const QByteArray &, void *message, qintptr *) override {
+        const MSG *msg = static_cast<const MSG *>(message);
+        if (msg->message != WM_HOTKEY || msg->wParam >= std::size(keys))
+            return false;
+        (backend->*keys[msg->wParam].action)();
+        return true;
+    }
+};
+
 struct Smtc::Private {
+    explicit Private(Backend *backend) : hotkeys(backend) {}
+    Hotkeys hotkeys;
     // A MediaPlayer with its own playback switched off is the way a desktop app
     // without a window handle gets the controls; mpv does the playing.
     Playback::MediaPlayer player{nullptr};
@@ -21,7 +64,7 @@ struct Smtc::Private {
     SystemMediaTransportControls::ButtonPressed_revoker pressed;
 };
 
-Smtc::Smtc(Backend *backend, QObject *parent) : QObject(parent), d(std::make_unique<Private>()) {
+Smtc::Smtc(Backend *backend, QObject *parent) : QObject(parent), d(std::make_unique<Private>(backend)) {
     try {
         d->player = Playback::MediaPlayer();
         d->player.CommandManager().IsEnabled(false);
