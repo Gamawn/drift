@@ -221,6 +221,8 @@ int main(int argc, char *argv[]) {
         return 1;
     if (const QString id = Backend::linkId(link); !id.isEmpty())
         backend.playId(id);
+    else
+        backend.resume();
     // Not in the way of the window coming up or the first track loading.
     QTimer::singleShot(5000, &updater, &Updater::check);
     const int code = app.exec();

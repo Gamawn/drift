@@ -35,6 +35,7 @@ class Backend : public QObject {
     Q_PROPERTY(int position READ position NOTIFY positionChanged)
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
+    Q_PROPERTY(bool normalize READ normalize WRITE setNormalize NOTIFY normalizeChanged)
 
 public:
     explicit Backend(const QString &ytdlp = "yt-dlp", const QString &mpv = "mpv", QObject *parent = nullptr);
@@ -50,6 +51,10 @@ public:
     int position() const { return m_position; }
     int duration() const { return m_duration; }
     int volume() const { return m_volume; }
+    bool normalize() const { return m_normalize; }
+    // Evens out the loudness between tracks, which YouTube leaves to its own player.
+    void setNormalize(bool normalize);
+    bool hasPrevious() const { return !m_history.isEmpty(); }
 
     // A playlist link starts its radio; anything else searches for songs.
     Q_INVOKABLE void submit(const QString &text);
@@ -60,8 +65,13 @@ public:
     Q_INVOKABLE void playSimilar(int index);
     // The same radio for a track known only by its id, as a drift:// link gives it.
     void playId(const QString &id);
+    // Plays the track the last run ended on, from where it stopped, and its radio after it.
+    void resume();
     Q_INVOKABLE void togglePause();
     Q_INVOKABLE void next();
+    Q_INVOKABLE void previous();
+    // Skips the current track and keeps it out of every radio from now on.
+    Q_INVOKABLE void dislike();
     // Plays this track from Up next now and rebuilds Up next from its radio.
     Q_INVOKABLE void playQueued(int index);
     Q_INVOKABLE void seek(int seconds);
@@ -93,6 +103,7 @@ signals:
     void positionChanged();
     void durationChanged();
     void volumeChanged();
+    void normalizeChanged();
 
 private:
     void playlistLoaded(int code, QProcess::ExitStatus status);
@@ -130,7 +141,10 @@ private:
     Track m_chainSeed;
     QList<Track> m_queue;
     QSet<QString> m_seen;
+    // Video ids, not song keys: a key is only a title, too wide a net to ban for good.
+    QSet<QString> m_disliked;
     Track m_current;
-    bool m_waiting = false, m_paused = false, m_loadedStream = false;
-    int m_position = 0, m_duration = 0, m_volume = 80;
+    QList<Track> m_history;
+    bool m_waiting = false, m_paused = false, m_loadedStream = false, m_resuming = false, m_normalize = true;
+    int m_position = 0, m_duration = 0, m_volume = 80, m_resumeAt = 0;
 };
