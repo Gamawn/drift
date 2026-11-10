@@ -173,7 +173,7 @@ ApplicationWindow {
 
                     Label {
                         visible: backend.current.id !== undefined
-                        text: backend.current.fromPlaylist ? qsTr("From your playlist") : qsTr("Radio")
+                        text: backend.following ? qsTr("Listening along") : backend.current.fromPlaylist ? qsTr("From your playlist") : qsTr("Radio")
                         color: theme.accent
                         font.pixelSize: 13
                     }
@@ -217,7 +217,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     from: 0
                     to: Math.max(1, backend.duration)
-                    enabled: backend.duration > 0
+                    enabled: backend.duration > 0 && !backend.following // the host's to move
                     focusPolicy: Qt.NoFocus
                     onPressedChanged: if (!pressed) backend.seekTo(value)
 
@@ -248,11 +248,12 @@ ApplicationWindow {
                     onClicked: backend.togglePause()
                 }
                 Button {
-                    text: qsTr("Next")
+                    // In a room the host picks the tracks, so the way on is the way out.
+                    text: backend.following ? qsTr("Stop listening along") : qsTr("Next")
                     focusPolicy: Qt.NoFocus
                     Material.roundedScale: theme.radius
-                    enabled: backend.current.id !== undefined
-                    onClicked: backend.next()
+                    enabled: backend.following || backend.current.id !== undefined
+                    onClicked: backend.following ? backend.unfollow() : backend.next()
                 }
                 Item { Layout.fillWidth: true }
                 Label {

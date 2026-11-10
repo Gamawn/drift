@@ -28,7 +28,8 @@ QString text(QString value) {
 }
 }
 
-Discord::Discord(Backend *backend, QObject *parent) : QObject(parent), m_backend(backend) {
+Discord::Discord(Backend *backend, const QString &room, QObject *parent)
+    : QObject(parent), m_backend(backend), m_room(room) {
     m_enabled = QSettings().value("discord", true).toBool();
 
     m_update.setSingleShot(true);
@@ -77,7 +78,7 @@ QByteArray Discord::frame(int opcode, const QJsonObject &payload) {
     return header + json;
 }
 
-QJsonObject Discord::activity(const QVariantMap &track, int position, int duration, qint64 now) {
+QJsonObject Discord::activity(const QVariantMap &track, int position, int duration, qint64 now, const QString &room) {
     const QString id = track.value("id").toString();
     QJsonObject activity{
         {"type", 2}, // Listening
@@ -85,9 +86,9 @@ QJsonObject Discord::activity(const QVariantMap &track, int position, int durati
         {"details", text(track.value("title").toString())},
         {"assets", QJsonObject{{"large_image", "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg"}}},
         // Discord takes two buttons at most, and only web links: the first is docs/index.html,
-        // which passes the track on to the viewer's own Drift as drift://play/<id>.
-        {"buttons", QJsonArray{QJsonObject{{"label", "Listen in Drift"},
-                                           {"url", "https://gamawn.github.io/drift/?v=" + id}},
+        // which brings the viewer's own Drift into this one's room as drift://join/<room>.
+        {"buttons", QJsonArray{QJsonObject{{"label", "Listen along in Drift"},
+                                           {"url", "https://gamawn.github.io/drift/?v=" + id + "&room=" + room}},
                                QJsonObject{{"label", "Listen on YouTube Music"},
                                            {"url", "https://music.youtube.com/watch?v=" + id}}}},
     };
@@ -140,7 +141,7 @@ void Discord::update() {
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const QJsonValue activity =
-        show ? QJsonValue(Discord::activity(m_backend->current(), m_backend->position(), m_backend->duration(), now))
+        show ? QJsonValue(Discord::activity(m_backend->current(), m_backend->position(), m_backend->duration(), now, m_room))
              : QJsonValue(QJsonValue::Null);
     m_socket.write(frame(Frame, {
         {"cmd", "SET_ACTIVITY"},
@@ -150,6 +151,7 @@ void Discord::update() {
     m_shown = show;
     m_shownPosition = m_backend->position();
     m_shownAt.start();
+    emit announced(show);
 }
 
 void Discord::connectNext() {

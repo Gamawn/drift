@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QObject>
@@ -36,6 +37,7 @@ class Backend : public QObject {
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
     Q_PROPERTY(bool normalize READ normalize WRITE setNormalize NOTIFY normalizeChanged)
+    Q_PROPERTY(bool following READ following NOTIFY followingChanged)
 
 public:
     explicit Backend(const QString &ytdlp = "yt-dlp", const QString &mpv = "mpv", QObject *parent = nullptr);
@@ -55,6 +57,15 @@ public:
     // Evens out the loudness between tracks, which YouTube leaves to its own player.
     void setNormalize(bool normalize);
     bool hasPrevious() const { return !m_history.isEmpty(); }
+
+    // Listening along in someone's room (room.cpp): their track plays at their position, and
+    // next, previous, dislike and seeking do nothing here. Pausing stays one's own.
+    bool following() const { return m_following; }
+    void setFollowing(bool following);
+    // What the host plays now. Picking a song or a playlist by hand leaves the room.
+    void follow(const Track &track, int position, bool playing);
+    // Leaves the room; the host's track plays on, with its own radio after it.
+    Q_INVOKABLE void unfollow();
 
     // A playlist link starts its radio; anything else searches for songs.
     Q_INVOKABLE void submit(const QString &text);
@@ -104,6 +115,7 @@ signals:
     void durationChanged();
     void volumeChanged();
     void normalizeChanged();
+    void followingChanged();
 
 private:
     void playlistLoaded(int code, QProcess::ExitStatus status);
@@ -117,6 +129,7 @@ private:
     void playNext();
     void resolveNext();
     void trackEnded(bool failed);
+    void syncToHost();
     void setStatus(const QString &status);
     void setError(const QString &error, bool clearsOnPlay = false);
 
@@ -147,4 +160,8 @@ private:
     QList<Track> m_history;
     bool m_waiting = false, m_paused = false, m_loadedStream = false, m_resuming = false, m_normalize = true;
     int m_position = 0, m_duration = 0, m_volume = 80, m_resumeAt = 0;
+    // The host's position when m_hostClock started; the clock is valid once the host was heard from.
+    bool m_following = false, m_hostPlaying = false, m_sync = false;
+    int m_hostPosition = 0;
+    QElapsedTimer m_hostClock;
 };

@@ -18,18 +18,21 @@ class Discord : public QObject {
     Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
 
 public:
-    explicit Discord(Backend *backend, QObject *parent = nullptr);
+    // room: this Drift's own (room.cpp), which the first button invites into.
+    explicit Discord(Backend *backend, const QString &room, QObject *parent = nullptr);
 
     bool enabled() const { return m_enabled; }
     void setEnabled(bool enabled);
 
     // The wire format, public so tests can check it without Discord.
     static QByteArray frame(int opcode, const QJsonObject &payload);
-    static QJsonObject activity(const QVariantMap &track, int position, int duration, qint64 now);
+    static QJsonObject activity(const QVariantMap &track, int position, int duration, qint64 now, const QString &room);
     static QStringList socketPaths();
 
 signals:
     void enabledChanged();
+    // Discord was told what plays, or that nothing does; the room hears the same.
+    void announced(bool playing);
 
 private:
     void update();
@@ -37,6 +40,7 @@ private:
     void readSocket();
 
     Backend *m_backend;
+    QString m_room;
     bool m_enabled = true;
     QLocalSocket m_socket;
     QStringList m_paths;

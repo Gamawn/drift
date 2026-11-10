@@ -47,7 +47,7 @@ Name: "{autoprograms}\Drift"; Filename: "{app}\drift.exe"
 Name: "{autodesktop}\Drift"; Filename: "{app}\drift.exe"; Tasks: desktopicon
 
 [Registry]
-; drift://play/<id> links, where Discord's "Listen in Drift" button ends up.
+; drift://join/<room> and drift://play/<id> links, where Discord's "Listen along in Drift" button ends up.
 Root: HKA; Subkey: "Software\Classes\drift"; ValueType: string; ValueName: ""; ValueData: "URL:Drift"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\drift"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\drift\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\drift.exe"" ""%1"""

@@ -10,6 +10,7 @@ HEADERS += \
     src/discord.h \
     src/mpv.h \
     src/process.h \
+    src/room.h \
     src/theme.h \
     src/translator.h \
     src/updater.h
@@ -19,6 +20,7 @@ SOURCES += \
     src/backend.cpp \
     src/discord.cpp \
     src/mpv.cpp \
+    src/room.cpp \
     src/theme.cpp \
     src/translator.cpp \
     src/updater.cpp

@@ -19,6 +19,7 @@
 #include "mpris.h"
 #endif
 #include "process.h"
+#include "room.h"
 #ifdef Q_OS_WIN
 #include <QApplication>
 #include <QDir>
@@ -118,7 +119,18 @@ int main(int argc, char *argv[]) {
 
     Theme theme;
     Backend backend(findTool("yt-dlp"), findTool("mpv"));
-    Discord discord(&backend);
+    Room room(&backend);
+    Discord discord(&backend, room.id());
+    QObject::connect(&discord, &Discord::announced, &room, &Room::publish);
+    // A drift:// link, from another launch or this one's: a room to listen along in, or a track.
+    auto open = [&](const QString &link) {
+        const QString joined = Room::linkRoom(link), id = Backend::linkId(link);
+        if (!joined.isEmpty())
+            room.join(joined);
+        else if (!id.isEmpty())
+            backend.playId(id);
+        return !joined.isEmpty() || !id.isEmpty();
+    };
 
     // Closing the window while music plays keeps it playing in the background;
     // the window and its QML engine are freed and built again when shown.
@@ -158,14 +170,13 @@ int main(int argc, char *argv[]) {
     QObject::connect(&server, &QLocalServer::newConnection, [&] {
         while (QLocalSocket *other = server.nextPendingConnection()) {
             // One line from the other launch: its drift:// link, or nothing.
-            auto read = [&backend, other] {
+            auto read = [&open, other] {
                 if (!other->canReadLine() && other->state() == QLocalSocket::ConnectedState)
                     return;
-                const QString id = Backend::linkId(QString::fromUtf8(other->readAll()));
+                const QString link = QString::fromUtf8(other->readAll());
                 other->disconnect();
                 other->deleteLater();
-                if (!id.isEmpty())
-                    backend.playId(id);
+                open(link);
             };
             QObject::connect(other, &QLocalSocket::readyRead, other, read);
             QObject::connect(other, &QLocalSocket::disconnected, other, read);
@@ -219,9 +230,7 @@ int main(int argc, char *argv[]) {
     show();
     if (!window())
         return 1;
-    if (const QString id = Backend::linkId(link); !id.isEmpty())
-        backend.playId(id);
-    else
+    if (!open(link))
         backend.resume();
     // Not in the way of the window coming up or the first track loading.
     QTimer::singleShot(5000, &updater, &Updater::check);

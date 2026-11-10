@@ -127,6 +127,8 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
             const int position = value.isNull() ? 0 : int(value.toDouble());
             if (!value.isNull() && m_resumeAt > 0)
                 seekTo(std::exchange(m_resumeAt, 0));
+            if (!value.isNull() && std::exchange(m_sync, false))
+                syncToHost();
             if (position > 0) {
                 m_playFailures = 0;
                 if (m_errorClearsOnPlay)
@@ -414,7 +416,64 @@ void Backend::resume() {
     m_resumeAt = position;
 }
 
+void Backend::setFollowing(bool following) {
+    if (following == m_following)
+        return;
+    m_following = following;
+    m_hostClock.invalidate();
+    m_sync = false;
+    emit followingChanged();
+}
+
+void Backend::follow(const Track &track, int position, bool playing) {
+    if (!m_following)
+        return;
+    const bool heard = m_hostClock.isValid();
+    // Paused here while the host played on: that outlasts the host's next track.
+    const bool pausedHere = heard && m_paused && m_hostPlaying;
+    const bool toggled = playing != m_hostPlaying;
+    m_hostPosition = position;
+    m_hostPlaying = playing;
+    m_hostClock.start();
+    if (!heard || track.id != m_current.id) {
+        clearResults();
+        reset(); // no seeds: nothing follows this track but the host's next one
+        m_queue = {track};
+        playNext();
+        m_sync = true; // the stream takes seconds to start, and the host doesn't wait
+        if (!playing || pausedHere)
+            m_mpv.command({"set_property", "pause", true});
+    } else {
+        syncToHost();
+        if (toggled)
+            m_mpv.command({"set_property", "pause", !playing});
+    }
+}
+
+void Backend::syncToHost() {
+    const int target = m_hostPosition + (m_hostPlaying ? int(m_hostClock.elapsed() / 1000) : 0);
+    // shortcut: 2 seconds apart counts as together, as positions travel in whole seconds and a seek
+    // is heard; send milliseconds and measure the delay if listeners need to be closer.
+    if (std::abs(target - m_position) > 2)
+        m_mpv.command({"seek", target, "absolute"});
+}
+
+void Backend::unfollow() {
+    if (!m_following)
+        return;
+    setFollowing(false);
+    // No seeds means the host's track took the radio's place; a radio of its own goes on from it.
+    if (m_seeds.isEmpty() && !m_current.id.isEmpty()) {
+        setSeeds({m_current});
+        m_chain = true;
+        m_chainSeed = m_current;
+        m_seen.insert(songKey(m_current));
+        refill();
+    }
+}
+
 void Backend::playSong(const Track &song) {
+    setFollowing(false);
     // Picking a song by hand takes back its dislike; nothing else undoes X.
     if (m_disliked.remove(song.id))
         QSettings().setValue("disliked", QStringList(m_disliked.cbegin(), m_disliked.cend()));
@@ -431,6 +490,7 @@ void Backend::start(const QString &input) {
     const QString url = input.trimmed();
     if (url.isEmpty())
         return;
+    setFollowing(false);
     m_playlistUrl = url;
     QSettings().setValue("playlistUrl", url);
     emit playlistUrlChanged();
@@ -569,19 +629,28 @@ void Backend::trackEnded(bool failed) {
     }
     if (failed)
         setError(tr("Couldn't play “%1”, skipped it.").arg(m_current.title), true);
+    // In a room the host's next track comes when the host gets there.
+    if (m_following && m_seeds.isEmpty())
+        return;
     playNext();
 }
 
 void Backend::togglePause() {
-    if (!m_current.id.isEmpty())
+    if (!m_current.id.isEmpty()) {
+        m_sync = m_following && m_paused; // the host went on meanwhile
         m_mpv.command({"set_property", "pause", !m_paused});
-    else if (!m_seeds.isEmpty())
+    } else if (m_following) {
+        // Nothing of one's own to start: the host's track is on its way.
+    } else if (!m_seeds.isEmpty()) {
         playNext();
-    else if (!m_playlistUrl.isEmpty() && !m_loadingPlaylist)
+    } else if (!m_playlistUrl.isEmpty() && !m_loadingPlaylist) {
         start(m_playlistUrl);
+    }
 }
 
 void Backend::next() {
+    if (m_following)
+        return;
     m_failures = 0;
     m_playFailures = 0;
     setError({});
@@ -590,7 +659,7 @@ void Backend::next() {
 }
 
 void Backend::previous() {
-    if (m_history.isEmpty())
+    if (m_following || m_history.isEmpty())
         return;
     // The track being left comes back right after the one before it.
     if (!m_current.id.isEmpty())
@@ -600,7 +669,7 @@ void Backend::previous() {
 }
 
 void Backend::dislike() {
-    if (m_current.id.isEmpty())
+    if (m_following || m_current.id.isEmpty())
         return;
     m_disliked.insert(m_current.id);
     QSettings().setValue("disliked", QStringList(m_disliked.cbegin(), m_disliked.cend()));
@@ -624,7 +693,7 @@ void Backend::abortMix() {
 }
 
 void Backend::playQueued(int index) {
-    if (index < 0 || index >= m_queue.size())
+    if (m_following || index < 0 || index >= m_queue.size())
         return;
     const Track track = m_queue.takeAt(index);
     // The tracks it replaces were never heard, so other mixes may bring them back.
@@ -640,12 +709,12 @@ void Backend::playQueued(int index) {
 }
 
 void Backend::seek(int seconds) {
-    if (!m_current.id.isEmpty())
+    if (!m_following && !m_current.id.isEmpty())
         m_mpv.command({"seek", seconds, "relative"});
 }
 
 void Backend::seekTo(int seconds) {
-    if (!m_current.id.isEmpty())
+    if (!m_following && !m_current.id.isEmpty())
         m_mpv.command({"seek", seconds, "absolute"});
 }
 

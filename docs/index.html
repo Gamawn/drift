@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- Where Discord's "Listen in Drift" button leads (GitHub Pages, master /docs):
-     ?v=<video id> is handed to the visitor's own Drift as drift://play/<id>. -->
+<!-- Where Discord's "Listen along in Drift" button leads (GitHub Pages, master /docs):
+     ?room=<room id> brings the visitor's own Drift into that room as drift://join/<room>;
+     without one, ?v=<video id> is handed to it as drift://play/<id>. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -41,11 +42,12 @@
         hint: "Opening the track in Drift… If nothing happens, Drift isn't installed.",
         none: "Endless YouTube Music radio from one of your playlists." };
   const id = new URLSearchParams(location.search).get("v") || "";
+  const room = new URLSearchParams(location.search).get("room") || "";
   const el = name => document.getElementById(name);
   document.documentElement.lang = ru ? "ru" : "en";
   el("download").textContent = text.download;
   if (/^[A-Za-z0-9_-]{11}$/.test(id)) {
-    const link = "drift://play/" + id;
+    const link = /^[a-f0-9]{32}$/.test(room) ? "drift://join/" + room : "drift://play/" + id;
     el("cover").src = "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg";
     el("cover").hidden = false;
     el("hint").textContent = text.hint;

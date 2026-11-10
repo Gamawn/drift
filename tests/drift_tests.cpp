@@ -14,6 +14,7 @@
 
 #include "backend.h"
 #include "discord.h"
+#include "room.h"
 #ifdef Q_OS_LINUX
 #include <QDBusConnection>
 #include <QDBusInterface>
@@ -133,7 +134,7 @@ private slots:
     void discordActivityShowsTheTrackAndItsProgress()
     {
         const QVariantMap track{{"id", "pRpeEdMmmQ0"}, {"title", "Waka Waka"}, {"artist", "Shakira"}};
-        const QJsonObject activity = Discord::activity(track, 30, 211, 1000000);
+        const QJsonObject activity = Discord::activity(track, 30, 211, 1000000, "abc");
         QCOMPARE(activity.value("type").toInt(), 2);
         QCOMPARE(activity.value("details").toString(), QString("Waka Waka"));
         QCOMPARE(activity.value("state").toString(), QString("Shakira"));
@@ -141,19 +142,75 @@ private slots:
         QCOMPARE(times.value("start").toInteger(), 970000);
         QCOMPARE(times.value("end").toInteger(), 1181000);
         QVERIFY(activity.value("assets").toObject().value("large_image").toString().contains("pRpeEdMmmQ0"));
-        // The first button's page turns into a drift:// link the viewer's own Drift opens.
+        // The first button's page turns into a drift://join link the viewer's own Drift opens.
         const QJsonArray buttons = activity.value("buttons").toArray();
         QCOMPARE(buttons.size(), 2);
-        QCOMPARE(buttons.at(0).toObject().value("url").toString(), QString("https://gamawn.github.io/drift/?v=pRpeEdMmmQ0"));
+        QCOMPARE(buttons.at(0).toObject().value("url").toString(), QString("https://gamawn.github.io/drift/?v=pRpeEdMmmQ0&room=abc"));
         QCOMPARE(buttons.at(1).toObject().value("url").toString(), QString("https://music.youtube.com/watch?v=pRpeEdMmmQ0"));
 
         // Discord refuses text under 2 or over 128 characters, and an empty state.
-        const QJsonObject odd = Discord::activity({{"id", "x"}, {"title", "A"}, {"artist", ""}}, 0, 0, 0);
+        const QJsonObject odd = Discord::activity({{"id", "x"}, {"title", "A"}, {"artist", ""}}, 0, 0, 0, {});
         QCOMPARE(odd.value("details").toString().size(), 2);
         QVERIFY(!odd.contains("state"));
         QVERIFY(!odd.contains("timestamps"));
-        const QJsonObject wordy = Discord::activity({{"id", "x"}, {"title", QString(300, 'a')}}, 0, 0, 0);
+        const QJsonObject wordy = Discord::activity({{"id", "x"}, {"title", QString(300, 'a')}}, 0, 0, 0, {});
         QCOMPARE(wordy.value("details").toString().size(), 128);
+    }
+
+    void roomSaysWhatTheHostPlays()
+    {
+        const QString room(32, 'a');
+        QCOMPARE(Room::linkRoom("drift://join/" + room + "/\n"), room);
+        QCOMPARE(Room::linkRoom("drift://join/" + room + "0"), QString());
+        QCOMPARE(Room::linkRoom("drift://join/../../etc"), QString());
+        QCOMPARE(Room::linkRoom("drift://play/pRpeEdMmmQ0"), QString());
+
+        // As ntfy hands it on: the host's message is the "message" of a line of the stream.
+        auto line = [](const QByteArray &said) {
+            return QJsonDocument(QJsonObject{{"event", "message"}, {"message", QString::fromUtf8(said)}}).toJson(QJsonDocument::Compact);
+        };
+        const QVariantMap track{{"id", "pRpeEdMmmQ0"}, {"title", "Waka Waka"}, {"artist", "Shakira"}, {"duration", 211.0}};
+        // Heard 5 seconds after it was said, the host is 5 seconds further on; a paused one isn't.
+        const Room::State state = Room::parse(line(Room::message(track, 30, true, 1000000)), 1005000);
+        QCOMPARE(state.track.id, QString("pRpeEdMmmQ0"));
+        QCOMPARE(state.track.title, QString("Waka Waka"));
+        QCOMPARE(state.position, 35);
+        QVERIFY(state.playing);
+        QCOMPARE(Room::parse(line(Room::message(track, 30, false, 1000000)), 1005000).position, 30);
+
+        // Not a track: a keepalive, a host long gone, and an id that is no video's.
+        QVERIFY(Room::parse(R"({"event":"keepalive"})", 0).track.id.isEmpty());
+        QVERIFY(Room::parse(line(Room::message(track, 30, true, 1000000)), 1000000 + 3600000).track.id.isEmpty());
+        QVERIFY(Room::parse(line(Room::message({{"id", "--exec rm -"}}, 0, true, 0)), 0).track.id.isEmpty());
+        QVERIFY(Room::parse("nonsense", 0).track.id.isEmpty());
+    }
+
+    void followerPlaysTheHostsTrackAndCannotChangeIt()
+    {
+        Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        backend.setSeeds({Track{"own", "Own", "Me"}});
+        backend.follow(Track{"early", "Early", "Host"}, 0, true); // not in a room: ignored
+        QVERIFY(backend.current().isEmpty());
+
+        backend.setFollowing(true);
+        backend.follow(Track{"one", "One", "Host"}, 40, true);
+        QCOMPARE(backend.current().value("id").toString(), QString("one"));
+        QVERIFY(backend.queue().isEmpty());
+        backend.next();
+        backend.previous();
+        backend.dislike();
+        QCOMPARE(backend.current().value("id").toString(), QString("one"));
+
+        backend.follow(Track{"two", "Two", "Host"}, 0, true);
+        QCOMPARE(backend.current().value("id").toString(), QString("two"));
+
+        // Leaving keeps the track, and a radio of its own is on the way after it.
+        backend.unfollow();
+        QVERIFY(!backend.following());
+        QCOMPARE(backend.current().value("id").toString(), QString("two"));
+        backend.addRadio(Track{"two", "Two", "Host"}, {Track{"two", "Two", "Host"}, Track{"three", "Three", "Other"}});
+        backend.next();
+        QCOMPARE(backend.current().value("id").toString(), QString("three"));
     }
 
     void updaterReadsAGitHubRelease()
