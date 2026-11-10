@@ -78,4 +78,4 @@ Runtime needs `mpv` and `yt-dlp` on every platform. New source files must be add
 
 ## Release
 
-`.github/workflows/windows.yml` builds `Drift-setup-x64.exe` (Inno Setup, `windows/drift.iss`, version from `pkgver`) and `Drift-windows-x64.zip` (Qt 6.8.3 MSVC, windeployqt, bundled mpv.exe/yt-dlp.exe) and the Arch package. Pushing a `v*` tag attaches all three to a release. Keep `pkgver` in `pkgbuild/PKGBUILD` and `setApplicationVersion` in `main.cpp` in step with the tag.
+`.github/workflows/windows.yml` builds `Drift-setup-x64.exe` (Inno Setup, `windows/drift.iss`, version from `pkgver`) and `Drift-windows-x64.zip` (Qt 6.8.3 MSVC, windeployqt, bundled mpv.exe/yt-dlp.exe) and the Arch package. Pushing a `v*` tag attaches all three to a release. Keep `pkgver` in `pkgbuild/PKGBUILD` and `setApplicationVersion` in `main.cpp` in step with the tag. A tag with a hyphen (`v0.6.0-dev`) is a release candidate: it is published as a prerelease, which the updater never offers, `pkgver` spells it `0.6.0_dev` (makepkg refuses hyphens), and `Updater::isNewer` takes it for older than `0.6.0`.

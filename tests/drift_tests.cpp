@@ -251,6 +251,10 @@ private slots:
         QVERIFY(!Updater::isNewer("0.3", "0.3.0"));
         QVERIFY(!Updater::isNewer("0.2.9", "0.3.0"));
         QVERIFY(!Updater::isNewer("", "0.3.0"));
+        // A release candidate moves on to its release, and not to itself.
+        QVERIFY(Updater::isNewer("0.6.0", "0.6.0-dev"));
+        QVERIFY(!Updater::isNewer("0.6.0", "0.6.1-dev"));
+        QVERIFY(!Updater::isNewer("0.5.0", "0.6.0-dev"));
     }
 
     void updaterForgetsAnInstalledUpdate()

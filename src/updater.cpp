@@ -91,7 +91,10 @@ Updater::Release Updater::parseRelease(const QByteArray &json) {
 
 bool Updater::isNewer(const QString &candidate, const QString &current) {
     const QVersionNumber version = QVersionNumber::fromString(candidate).normalized();
-    return !version.isNull() && version > QVersionNumber::fromString(current).normalized();
+    qsizetype suffix = 0;
+    const QVersionNumber running = QVersionNumber::fromString(current, &suffix).normalized();
+    // A 0.6.0-dev build is older than the 0.6.0 it leads to.
+    return !version.isNull() && (version > running || (version == running && suffix < current.size()));
 }
 
 bool Updater::installPending() {

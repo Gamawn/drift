@@ -26,7 +26,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
-          $pkgver = (Select-String -Path pkgbuild/PKGBUILD -Pattern '^pkgver=(.+)$').Matches[0].Groups[1].Value
+          # A release candidate is tagged v0.6.0-dev; pkgver can't hold a hyphen, so there it is 0.6.0_dev.
+          $pkgver = (Select-String -Path pkgbuild/PKGBUILD -Pattern '^pkgver=(.+)$').Matches[0].Groups[1].Value -replace '_', '-'
           $app = (Select-String -Path src/main.cpp -Pattern 'setApplicationVersion\("(.+)"\)').Matches[0].Groups[1].Value
           if ("v$pkgver" -ne $env:GITHUB_REF_NAME -or $app -ne $pkgver) {
             throw "Tag $env:GITHUB_REF_NAME, pkgver $pkgver and setApplicationVersion $app don't match."
@@ -109,7 +110,7 @@ jobs:
             choco install innosetup -y --no-progress
             $iscc = & $find
           }
-          $version = (Select-String -Path pkgbuild/PKGBUILD -Pattern '^pkgver=(.+)$').Matches[0].Groups[1].Value
+          $version = (Select-String -Path pkgbuild/PKGBUILD -Pattern '^pkgver=(.+)$').Matches[0].Groups[1].Value -replace '_', '-'
           & $iscc.FullName "/DAppVersion=$version" windows/drift.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
@@ -156,3 +157,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          # The updater asks GitHub for the latest release, which a prerelease never is,
+          # so a -dev tag reaches only those who download it themselves.
+          prerelease: ${{ contains(github.ref_name, '-') }}
