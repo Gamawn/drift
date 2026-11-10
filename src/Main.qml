@@ -8,7 +8,7 @@ ApplicationWindow {
     width: 720
     height: 560
     minimumWidth: 520
-    minimumHeight: 440
+    minimumHeight: 500
     visible: true
     title: backend.current.title ? backend.current.title + " — Drift" : "Drift"
     color: "#0e0e10"
@@ -52,6 +52,9 @@ ApplicationWindow {
     Shortcut { sequence: "Q"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "Space"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.togglePause() }
     Shortcut { sequence: "N"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.next() }
+    Shortcut { sequence: "P"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.previous() }
+    Shortcut { sequence: "X"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.dislike() }
+    Shortcut { sequence: "L"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.normalize = !backend.normalize }
     Shortcut { sequence: "Left"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.seek(-10) }
     Shortcut { sequence: "Right"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.seek(10) }
     Shortcut { sequence: "Up"; enabled: win.keys; context: Qt.ApplicationShortcut; onActivated: backend.changeVolume(5) }
@@ -395,9 +398,11 @@ ApplicationWindow {
                     Repeater {
                         model: [
                             ["Space", qsTr("Play or pause")],
-                            ["N", qsTr("Next track")],
+                            ["N  P", qsTr("Next or previous track")],
+                            ["X", qsTr("Never play this track again")],
                             ["← →", qsTr("Seek 10 seconds")],
                             ["↑ ↓", qsTr("Volume")],
+                            ["L", backend.normalize ? qsTr("Stop leveling the loudness of tracks") : qsTr("Level the loudness of tracks")],
                             ["Ctrl+L", qsTr("Search or change playlist")],
                             ["Enter", qsTr("Search, or play the picked song")],
                             ["Esc", qsTr("Close search results")],

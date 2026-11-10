@@ -59,6 +59,9 @@ Runtime needs `mpv` and `yt-dlp` on every platform. New source files must be add
   - Radio mixes and search call YouTube Music's internal `youtubei/v1/next` and `/search` endpoints directly over `QNetworkAccessManager`.
   - Each track's stream URL comes from `yt-dlp -g` (`m_resolve`), which is then handed to mpv.
   - Queue logic: each playlist song takes a turn as the seed, then a few tracks from its mix follow. `m_seen` stops anything except playlist songs from repeating. Searching a song sets chain mode (`m_chain`), where the radio follows mix after mix from that one seed.
+  - `m_history` holds the last 20 tracks for `previous()`, which puts the current one back at the head of the queue. `m_disliked` (video ids, the `disliked` setting) keeps a track out of every radio; picking it by hand in `playSong` takes that back.
+  - `playNext` saves the track and mode under `last/` and the destructor its position; `resume()` (called from `main.cpp` unless a `drift://` link came) plays it again at launch and seeks on mpv's first `time-pos`.
+  - Loudness is leveled by mpv's `dynaudnorm` filter (`kNormalize`, the `normalize` setting, L key), set over IPC like the volume.
   - The parse and queue functions (`parseEntries`, `parseRadio`, `parseSearch`, `setSeeds`, `nextSeed`, `addRadio`) are public statics or methods, so tests drive them with JSON fixtures and no network.
   - State is kept with QSettings, so tests call `QStandardPaths::setTestModeEnabled(true)`.
 - **Mpv** (`mpv.cpp`): a separate `mpv --idle` process controlled over its JSON IPC socket. It starts lazily on the first load and runs with video off and a small demuxer cache (keeping the app around 200 MB is a stated goal). Commands sent before the socket connects are queued in `m_pending`.

@@ -22,6 +22,11 @@ constexpr int kRadioPerSeed = 5;
 constexpr int kChainPerSeed = 10;
 // Consecutive failures (mix lookups, or tracks that won't play) before we say so.
 constexpr int kMaxFailures = 3;
+// Tracks P can walk back through.
+constexpr int kHistory = 20;
+// Pulls each track toward one loudness, about the -14 LUFS YouTube's own player aims for.
+// loudnorm levels better but costs mpv 50 MB and a resample to 192 kHz; this costs 17 MB.
+constexpr char kNormalize[] = "dynaudnorm=r=0.15";
 
 QString watchUrl(const QString &id) { return "https://www.youtube.com/watch?v=" + id; }
 
@@ -88,7 +93,11 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
     QSettings settings;
     m_playlistUrl = settings.value("playlistUrl").toString();
     m_volume = std::clamp(settings.value("volume", 80).toInt(), 0, 100);
+    m_normalize = settings.value("normalize", true).toBool();
+    const QStringList disliked = settings.value("disliked").toStringList();
+    m_disliked = QSet<QString>(disliked.begin(), disliked.end());
     m_mpv.command({"set_property", "volume", m_volume});
+    m_mpv.command({"set_property", "af", m_normalize ? kNormalize : ""});
 
     hideConsole(m_fetch);
     hideConsole(m_resolve);
@@ -116,6 +125,8 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
         if (name == "time-pos") {
             // mpv reports many times a second; the window only shows seconds.
             const int position = value.isNull() ? 0 : int(value.toDouble());
+            if (!value.isNull() && m_resumeAt > 0)
+                seekTo(std::exchange(m_resumeAt, 0));
             if (position > 0) {
                 m_playFailures = 0;
                 if (m_errorClearsOnPlay)
@@ -141,6 +152,8 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
 }
 
 Backend::~Backend() {
+    if (!m_current.id.isEmpty())
+        QSettings().setValue("last/position", std::max(m_position, m_resumeAt));
     for (QNetworkReply *reply : {m_mixReply.data(), m_searchReply.data()}) {
         if (reply) {
             reply->disconnect(this);
@@ -291,7 +304,7 @@ void Backend::addRadio(const Track &seed, const QList<Track> &mix) {
             m_seen.insert(key);
             emit currentChanged();
         }
-        if (track.id == seed.id || m_seen.contains(key))
+        if (track.id == seed.id || m_seen.contains(key) || m_disliked.contains(track.id))
             continue;
         m_seen.insert(key);
         m_queue.append(track);
@@ -325,6 +338,7 @@ void Backend::reset() {
     m_chain = false;
     m_failures = 0;
     m_waiting = false;
+    m_resuming = false;
     setError({});
     emit upcomingChanged();
 }
@@ -380,7 +394,30 @@ void Backend::playId(const QString &id) {
     playSong(Track{id});
 }
 
+void Backend::resume() {
+    QSettings settings;
+    const QStringList saved = settings.value("last/track").toStringList();
+    if (saved.size() != 3 || saved.first().isEmpty())
+        return;
+    const Track track{saved.at(0), saved.at(1), saved.at(2), 0, settings.value("last/fromPlaylist").toBool()};
+    const int position = settings.value("last/position").toInt();
+    if (settings.value("last/chain", true).toBool() || m_playlistUrl.isEmpty()) {
+        playSong(track);
+    } else {
+        // The track plays while yt-dlp reads the playlist, which then follows it instead of cutting in.
+        start(m_playlistUrl);
+        m_resuming = true;
+        m_seen.insert(songKey(track));
+        m_queue.append(track);
+        playNext();
+    }
+    m_resumeAt = position;
+}
+
 void Backend::playSong(const Track &song) {
+    // Picking a song by hand takes back its dislike; nothing else undoes X.
+    if (m_disliked.remove(song.id))
+        QSettings().setValue("disliked", QStringList(m_disliked.cbegin(), m_disliked.cend()));
     clearResults();
     reset();
     setSeeds({song});
@@ -420,7 +457,8 @@ void Backend::playlistLoaded(int code, QProcess::ExitStatus status) {
     }
     setSeeds(seeds);
     setStatus(tr("%n tracks in playlist", "", int(seeds.size())));
-    m_waiting = true;
+    if (!std::exchange(m_resuming, false))
+        m_waiting = true;
     refill();
 }
 
@@ -448,7 +486,8 @@ void Backend::refill() {
         return;
     const Track seed = m_chain ? m_chainSeed : nextSeed();
     fetchMix(seed);
-    if (!m_seen.contains(songKey(seed))) {
+    // A disliked playlist song still leads its mix, it just isn't played itself.
+    if (!m_seen.contains(songKey(seed)) && !m_disliked.contains(seed.id)) {
         m_seen.insert(songKey(seed));
         m_queue.append(seed);
         queueChanged();
@@ -471,7 +510,19 @@ void Backend::playNext() {
         return;
     }
     m_waiting = false;
+    // shortcut: a track that failed to play is remembered too, so P bounces off it; filter those if it gets in the way.
+    if (!m_current.id.isEmpty() && !m_disliked.contains(m_current.id)) {
+        m_history.append(m_current);
+        if (m_history.size() > kHistory)
+            m_history.removeFirst();
+    }
     m_current = m_queue.takeFirst();
+    m_resumeAt = 0;
+    QSettings settings;
+    settings.setValue("last/track", QStringList{m_current.id, m_current.title, m_current.artist});
+    settings.setValue("last/fromPlaylist", m_current.fromPlaylist);
+    settings.setValue("last/chain", m_chain);
+    settings.setValue("last/position", 0);
     // A stream resolved ahead of time starts at once; otherwise mpv asks
     // yt-dlp itself, which takes a couple of seconds.
     m_loadedStream = m_streamId == m_current.id && !m_streamUrl.isEmpty();
@@ -538,6 +589,24 @@ void Backend::next() {
         playNext();
 }
 
+void Backend::previous() {
+    if (m_history.isEmpty())
+        return;
+    // The track being left comes back right after the one before it.
+    if (!m_current.id.isEmpty())
+        m_queue.prepend(std::exchange(m_current, {}));
+    m_queue.prepend(m_history.takeLast());
+    playNext();
+}
+
+void Backend::dislike() {
+    if (m_current.id.isEmpty())
+        return;
+    m_disliked.insert(m_current.id);
+    QSettings().setValue("disliked", QStringList(m_disliked.cbegin(), m_disliked.cend()));
+    next();
+}
+
 void Backend::fetchMix(const Track &seed) {
     m_mixSeed = seed;
     m_mixReply = m_network.post(musicRequest("next"),
@@ -590,6 +659,15 @@ void Backend::setVolume(int target) {
     m_mpv.command({"set_property", "volume", m_volume});
     QSettings().setValue("volume", m_volume);
     emit volumeChanged();
+}
+
+void Backend::setNormalize(bool normalize) {
+    if (normalize == m_normalize)
+        return;
+    m_normalize = normalize;
+    m_mpv.command({"set_property", "af", m_normalize ? kNormalize : ""});
+    QSettings().setValue("normalize", m_normalize);
+    emit normalizeChanged();
 }
 
 void Backend::setStatus(const QString &status) {

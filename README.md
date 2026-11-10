@@ -19,9 +19,11 @@ reads the playlist, so the whole thing stays around 200 MB.
 | Key | Action |
 | --- | --- |
 | Space | Play or pause |
-| N | Next track |
+| N P | Next or previous track |
+| X | Never play this track again |
 | ← → | Seek 10 seconds |
 | ↑ ↓ | Volume |
+| L | Level the loudness of tracks, on by default |
 | Enter | Search, or play the picked song |
 | Ctrl+L | Search or change playlist |
 | Esc | Close search results, leave the field |
@@ -32,7 +34,8 @@ reads the playlist, so the whole thing stays around 200 MB.
 
 Close the window while music plays and Drift keeps playing with its window
 and interface unloaded; launch it again to bring the window back. Q quits.
-Closing the window with nothing playing quits too.
+Closing the window with nothing playing quits too. The next launch starts
+playing the track Drift quit on, from the same second, and its radio after it.
 
 On Linux Drift is an MPRIS player, so the keyboard's media keys, `playerctl`,
 and Omarchy's media bar widget play, pause, and skip without switching to it.

@@ -28,6 +28,7 @@ struct Hotkeys : QAbstractNativeEventFilter {
     static constexpr Key keys[] = {
         {MOD_NOREPEAT, VK_MEDIA_PLAY_PAUSE, [](Backend *backend) { backend->togglePause(); }},
         {MOD_NOREPEAT, VK_MEDIA_NEXT_TRACK, [](Backend *backend) { backend->next(); }},
+        {MOD_NOREPEAT, VK_MEDIA_PREV_TRACK, [](Backend *backend) { backend->previous(); }},
         // CS2 leaves Alt unbound, so these don't fight the game; Alt+Z is NVIDIA's overlay.
         {MOD_ALT | MOD_NOREPEAT, 'X', [](Backend *backend) { backend->togglePause(); }},
         {MOD_ALT | MOD_NOREPEAT, 'C', [](Backend *backend) { backend->next(); }},
@@ -76,12 +77,15 @@ Smtc::Smtc(Backend *backend, QObject *parent) : QObject(parent), d(std::make_uni
         d->controls.IsPlayEnabled(true);
         d->controls.IsPauseEnabled(true);
         d->controls.IsNextEnabled(true);
+        d->controls.IsPreviousEnabled(true);
         d->pressed = d->controls.ButtonPressed(winrt::auto_revoke, [this, backend](const auto &, const auto &args) {
             const auto button = args.Button();
             // Windows calls this on its own thread; Backend lives on Qt's.
             QMetaObject::invokeMethod(this, [backend, button] {
                 if (button == SystemMediaTransportControlsButton::Next)
                     backend->next();
+                else if (button == SystemMediaTransportControlsButton::Previous)
+                    backend->previous();
                 else if (button == SystemMediaTransportControlsButton::Play && !backend->playing())
                     backend->togglePause();
                 else if (button == SystemMediaTransportControlsButton::Pause && backend->playing())

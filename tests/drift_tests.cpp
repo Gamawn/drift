@@ -34,6 +34,12 @@ private slots:
         QStandardPaths::setTestModeEnabled(true);
     }
 
+    void init()
+    {
+        // The last track and the disliked ones are settings; one test's mustn't reach the next.
+        QSettings().clear();
+    }
+
     void cleanup()
     {
         QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
@@ -267,6 +273,113 @@ private slots:
         QCOMPARE(backend.current().value("id").toString(), QString("b"));
     }
 
+    void previousGoesBackAndNextReturns()
+    {
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+        Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        const Track seed{"s", "Seed", "A"};
+        backend.setSeeds({seed});
+        backend.addRadio(seed, {{"a", "A", "X"}, {"b", "B", "X"}, {"c", "C", "X"}});
+        auto current = [&] { return backend.current().value("id").toString(); };
+        backend.previous(); // nothing has played yet
+        QVERIFY(backend.current().isEmpty());
+        backend.togglePause();
+        backend.next();
+        QCOMPARE(current(), QString("b"));
+        backend.previous();
+        QCOMPARE(current(), QString("a"));
+        QVERIFY(!backend.hasPrevious());
+        backend.next(); // the track it left, then on as before
+        QCOMPARE(current(), QString("b"));
+        backend.next();
+        QCOMPARE(current(), QString("c"));
+    }
+
+    void dislikedTrackStaysOutForGood()
+    {
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+        const Track seed{"s", "Seed", "A"};
+        {
+            Backend backend("/nonexistent/yt-dlp", "/nonexistent/mpv");
+            backend.setSeeds({seed});
+            backend.addRadio(seed, {{"a", "A", "X"}, {"b", "B", "X"}});
+            backend.togglePause();
+            backend.dislike();
+            QCOMPARE(backend.current().value("id").toString(), QString("b"));
+            QVERIFY(!backend.hasPrevious()); // P doesn't lead back to it either
+        }
+        Backend later("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        later.addRadio(seed, {{"a", "A", "X"}, {"c", "C", "X"}});
+        QCOMPARE(later.queue().size(), 1);
+        QCOMPARE(later.queue().first().id, QString("c"));
+        // Picking it by hand is the way back.
+        later.playId("a");
+        QCOMPARE(later.current().value("id").toString(), QString("a"));
+        Backend forgiven("/nonexistent/yt-dlp", "/nonexistent/mpv");
+        forgiven.addRadio(seed, {{"a", "A", "X"}});
+        QCOMPARE(forgiven.queue().size(), 1);
+    }
+
+    void resumesTheLastTrackWhereItStopped()
+    {
+        if (QStandardPaths::findExecutable("python3").isEmpty())
+            QSKIP("needs python3 for the fake mpv");
+        QTemporaryDir dir;
+        const QString log = dir.filePath("seeks");
+        // Starts playing at once and notes where it's told to seek.
+        const QString mpv = script(dir.filePath("mpv"), "#!/usr/bin/env python3\n"
+            "import json, socket, sys\n"
+            "path = [a.split('=', 1)[1] for a in sys.argv if a.startswith('--input-ipc-server=')][0]\n"
+            "server = socket.socket(socket.AF_UNIX); server.bind(path); server.listen(1)\n"
+            "conn, _ = server.accept()\n"
+            "for line in conn.makefile('rb'):\n"
+            "    command = json.loads(line).get('command', [''])\n"
+            "    if command[0] == 'loadfile':\n"
+            "        conn.sendall(b'{\"event\":\"property-change\",\"name\":\"time-pos\",\"data\":0.0}\\n')\n"
+            "    if command[0] == 'seek':\n"
+            "        open('" + log.toUtf8() + "', 'a').write('%s %s\\n' % (command[1], command[2]))\n"
+            "        conn.sendall(b'{\"event\":\"property-change\",\"name\":\"time-pos\",\"data\":%d}\\n' % command[1])\n");
+        const QString ytdlp = script(dir.filePath("yt-dlp"),
+            "#!/bin/sh\ncase \"$*\" in *flat-playlist*) sleep 1; "
+            "echo '{\"entries\": [{\"id\": \"p1\", \"title\": \"Playlist Song\", \"channel\": \"A\"}]}';; *) exit 1;; esac\n");
+        QTcpServer proxy;
+        int requests = 0;
+        failNetwork(proxy, requests);
+        auto file = [&] { QFile seeks(log); return seeks.open(QIODevice::ReadOnly) ? seeks.readAll() : QByteArray(); };
+        const Track seed{"s", "Seed", "A"};
+
+        // A song's radio: the same song, at the second it had reached.
+        {
+            Backend backend(ytdlp, mpv);
+            backend.setSeeds({seed});
+            backend.addRadio(seed, {{"a", "Song, A", "X"}});
+            backend.togglePause();
+            backend.seekTo(42);
+            QTRY_COMPARE(backend.position(), 42);
+        }
+        QFile::remove(log);
+        {
+            Backend backend(ytdlp, mpv);
+            backend.resume();
+            QCOMPARE(backend.current().value("title").toString(), QString("Song, A"));
+            QTRY_COMPARE(file(), QByteArray("42 absolute\n"));
+        }
+
+        // A playlist's radio: the track plays while the playlist loads, and the playlist follows it.
+        QSettings().setValue("playlistUrl", "https://music.youtube.com/playlist?list=PLx");
+        QSettings().setValue("last/chain", false);
+        Backend backend(ytdlp, mpv);
+        backend.resume();
+        QCOMPARE(backend.current().value("id").toString(), QString("a"));
+        QTRY_COMPARE(backend.queue().size(), 1);
+        QCOMPARE(backend.queue().first().id, QString("p1"));
+        QCOMPARE(backend.current().value("id").toString(), QString("a"));
+    }
+
 #ifdef Q_OS_LINUX
     void mprisControlsTheRadio()
     {
@@ -297,6 +410,12 @@ private slots:
         QCOMPARE(metadata().value("xesam:title").toString(), QString("Song A"));
         QCOMPARE(metadata().value("mpris:trackid").value<QDBusObjectPath>().path(), QString("/org/drift/track/a_1"));
 
+        QVERIFY(!get(player, "CanGoPrevious").toBool());
+        QDBusInterface(service, path, player).call("Next");
+        QCOMPARE(metadata().value("xesam:title").toString(), QString("Song B"));
+        QVERIFY(get(player, "CanGoPrevious").toBool());
+        QDBusInterface(service, path, player).call("Previous");
+        QCOMPARE(metadata().value("xesam:title").toString(), QString("Song A"));
         QDBusInterface(service, path, player).call("Next");
         QCOMPARE(metadata().value("xesam:title").toString(), QString("Song B"));
         QVERIFY(QDBusInterface(service, path, player).setProperty("Volume", 0.3));

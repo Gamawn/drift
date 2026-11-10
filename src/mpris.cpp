@@ -26,7 +26,7 @@ Mpris::Mpris(Backend *backend, std::function<void()> raise, std::function<void()
         QDBusConnection::sessionBus().send(signal);
     };
     connect(backend, &Backend::currentChanged, this, [announce] {
-        announce({"Metadata", "PlaybackStatus", "CanGoNext", "CanPause", "CanSeek"});
+        announce({"Metadata", "PlaybackStatus", "CanGoNext", "CanGoPrevious", "CanPause", "CanSeek"});
     });
     connect(backend, &Backend::durationChanged, this, [announce] { announce({"Metadata"}); });
     connect(backend, &Backend::playingChanged, this, [announce] { announce({"PlaybackStatus"}); });
@@ -79,7 +79,11 @@ qlonglong MprisPlayer::position() const { return qlonglong(m_backend->position()
 
 bool MprisPlayer::hasTrack() const { return !m_backend->current().isEmpty(); }
 
+bool MprisPlayer::hasPrevious() const { return m_backend->hasPrevious(); }
+
 void MprisPlayer::Next() { m_backend->next(); }
+
+void MprisPlayer::Previous() { m_backend->previous(); }
 
 void MprisPlayer::Pause() {
     if (m_backend->playing())

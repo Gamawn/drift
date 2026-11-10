@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 #endif
     app.setApplicationName("drift");
     app.setOrganizationName("drift");
-    app.setApplicationVersion("0.4.0");
+    app.setApplicationVersion("0.5.0");
 
     // Matches the window to drift.desktop, so the compositor (Wayland app_id)
     // and the launcher pick up the installed icon.
@@ -221,6 +221,8 @@ int main(int argc, char *argv[]) {
         return 1;
     if (const QString id = Backend::linkId(link); !id.isEmpty())
         backend.playId(id);
+    else
+        backend.resume();
     // Not in the way of the window coming up or the first track loading.
     QTimer::singleShot(5000, &updater, &Updater::check);
     const int code = app.exec();
