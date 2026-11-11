@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
 #endif
     app.setApplicationName("drift");
     app.setOrganizationName("drift");
-    app.setApplicationVersion("0.6.0-dev");
+    app.setApplicationVersion("0.6.1-dev");
 
     // Matches the window to drift.desktop, so the compositor (Wayland app_id)
     // and the launcher pick up the installed icon.
