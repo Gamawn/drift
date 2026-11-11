@@ -48,6 +48,8 @@ private:
     // What the room was told last, to say nothing when nothing changed.
     QString m_sentId;
     bool m_sentPlaying = false;
+    // Playing was to be told of a track that hasn't started; it is once it has.
+    bool m_held = false;
     int m_sentPosition = 0;
     QElapsedTimer m_sentAt;
 };

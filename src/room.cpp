@@ -26,6 +26,11 @@ Room::Room(Backend *backend, QObject *parent)
         if (!m_backend->following())
             listen();
     });
+    // The track publish() was waiting for is heard now.
+    connect(backend, &Backend::positionChanged, this, [this] {
+        if (m_held && m_backend->position() > 0)
+            publish(m_backend->playing());
+    });
 }
 
 Room::~Room() {
@@ -83,6 +88,12 @@ void Room::publish(bool playing) {
     const QVariantMap track = m_backend->current();
     const QString id = track.value("id").toString();
     const int position = m_backend->position();
+    // A track is announced a second after it's picked, and its stream may take a few more to
+    // start: saying "playing, at 0" now would put a guest ahead by that much. The first second
+    // heard is said instead, which also lands on the second's edge.
+    m_held = playing && position == 0 && !id.isEmpty();
+    if (m_held)
+        return;
     const int expected = m_sentPosition + (m_sentPlaying ? int(m_sentAt.elapsed() / 1000) : 0);
     if (id.isEmpty() || (id == m_sentId && playing == m_sentPlaying && std::abs(position - expected) <= 2))
         return;
