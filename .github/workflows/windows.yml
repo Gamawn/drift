@@ -153,19 +153,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Qt
-          key: qt-6.8.3-mac-clang_64-base-declarative-svg
+          key: qt-6.10.3-mac-clang_64-base-declarative-svg
 
       - if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
           pipx install aqtinstall
-          aqt install-qt mac desktop 6.8.3 clang_64 --outputdir Qt --archives qtbase qtdeclarative qtsvg
+          aqt install-qt mac desktop 6.10.3 clang_64 --outputdir Qt --archives qtbase qtdeclarative qtsvg
 
       - name: Build
         run: |
-          export PATH="$PWD/Qt/6.8.3/macos/bin:$PATH"
+          export PATH="$PWD/Qt/6.10.3/macos/bin:$PATH"
           mkdir -p build/dmg
           cd build
-          # Qt up to 6.10 calls __yield() without arm_acle.h, which the runner's Xcode
+          # Qt 6.10 for the runner's macOS 26 SDK, which has no AGL for 6.8 to link. It still
+          # calls __yield() without arm_acle.h, which that Xcode
           # makes an error; it is a compiler builtin either way.
           qmake ../drift.pro QMAKE_APPLE_DEVICE_ARCHS="x86_64 arm64" \
             QMAKE_CXXFLAGS+=-Wno-error=implicit-function-declaration
