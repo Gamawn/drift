@@ -153,12 +153,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Qt
-          key: qt-6.10.3-mac-clang_64-base-declarative-svg
+          key: qt-6.10.3-mac-clang_64-base-declarative-svg-pruned
 
       - if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
           pipx install aqtinstall
           aqt install-qt mac desktop 6.10.3 clang_64 --outputdir Qt --archives qtbase qtdeclarative qtsvg
+          # macdeployqt copies and signs whatever is there, so what Drift never loads goes
+          # before the cache is saved: database drivers, QML debugging, debug symbols and
+          # every Controls style but Material, which is built on Basic.
+          cd Qt/6.10.3/macos
+          rm -rf plugins/sqldrivers plugins/qmltooling plugins/designer qml/QtQuick/NativeStyle
+          for style in FluentWinUI3 Fusion Imagine Universal macOS iOS; do
+            rm -rf "qml/QtQuick/Controls/$style"
+          done
+          find . -name '*.dSYM' -prune -exec rm -rf {} +
 
       - name: Build
         run: |
