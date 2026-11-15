@@ -1,6 +1,8 @@
 {
   "yt-dlp isn't installed. Install it with: omarchy-pkg-add yt-dlp": "yt-dlp не установлен. Установите: omarchy-pkg-add yt-dlp",
   "mpv isn't installed. Install it with: omarchy-pkg-add mpv": "mpv не установлен. Установите: omarchy-pkg-add mpv",
+  "yt-dlp isn't installed. Install it with: brew install yt-dlp": "yt-dlp не установлен. Установите: brew install yt-dlp",
+  "mpv isn't installed. Install it with: brew install mpv": "mpv не установлен. Установите: brew install mpv",
   "mpv stopped unexpectedly. Press N to try the next track.": "mpv неожиданно завершился. Нажмите N, чтобы попробовать следующий трек.",
   "Couldn't connect to mpv.": "Не удалось подключиться к mpv.",
   "Loading playlist…": "Загружаю плейлист…",

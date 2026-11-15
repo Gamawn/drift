@@ -8,4 +8,8 @@ cd "$ROOT/build"
 qmake6 "$ROOT/drift.pro"
 make -j"$(getconf _NPROCESSORS_ONLN)"
 
-echo "Built $ROOT/build/drift"
+if [ "$(uname)" = Darwin ]; then
+    echo "Built $ROOT/build/Drift.app"
+else
+    echo "Built $ROOT/build/drift"
+fi

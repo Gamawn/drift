@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,7 +26,11 @@ namespace {
 const char kLatest[] = "https://api.github.com/repos/Gamawn/drift/releases/latest";
 // Anything a release points to outside of this is ignored.
 const char kReleases[] = "https://github.com/Gamawn/drift/releases/";
+#ifdef Q_OS_MACOS
+const char kInstaller[] = "Drift-macos.dmg";
+#else
 const char kInstaller[] = "Drift-setup-x64.exe";
+#endif
 
 QNetworkRequest request(const QUrl &url) {
     QNetworkRequest request(url);
@@ -43,15 +48,42 @@ QByteArray hashOf(const QString &path) {
     return hash.result().toHex();
 }
 
+#ifndef Q_OS_MACOS
 // /SILENT leaves only the progress window; /RELAUNCH is drift.iss's own and starts Drift again.
 QStringList arguments() {
     return {"/SILENT", "/NORESTART", "/RELAUNCH=1"};
 }
+#endif
 
-// Only a copy the installer put there can be updated by running the installer again.
+#ifdef Q_OS_MACOS
+// Drift.app, from Drift.app/Contents/MacOS.
+QString bundle() {
+    return QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../..");
+}
+
+// Once this Drift has quit, puts the Drift.app from the disk image in its place
+// and opens it. A copy that fails leaves the old one, which is opened instead.
+bool replaceBundle(const QString &image) {
+    const char script[] = R"(
+while kill -0 "$3" 2>/dev/null; do sleep 0.2; done
+mount=$(mktemp -d) && hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$1" >/dev/null &&
+    rm -rf "$2.new" && ditto "$mount/Drift.app" "$2.new" && rm -rf "$2" && mv "$2.new" "$2"
+hdiutil detach "$mount" >/dev/null
+rm -rf "$2.new" "$mount"
+open "$2"
+)";
+    return QProcess::startDetached("/bin/sh", {"-c", script, "sh", image, bundle(),
+                                               QString::number(QCoreApplication::applicationPid())});
+}
+#endif
+
+// Only a copy the installer put there can be updated by running the installer again;
+// on macOS, a Drift.app in a folder Drift may write to (not one run straight from the disk image).
 bool installed() {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN)
     return QFile::exists(QCoreApplication::applicationDirPath() + "/unins000.exe");
+#elif defined(Q_OS_MACOS)
+    return bundle().endsWith(".app") && QFileInfo(QFileInfo(bundle()).absolutePath()).isWritable();
 #else
     return false;
 #endif
@@ -116,6 +148,9 @@ bool Updater::installPending() {
         return forget();
     settings.setValue("update/attempted", version);
     settings.sync();
+#ifdef Q_OS_MACOS
+    return replaceBundle(path);
+#else
     // Drift stays, still taking a second launch's connection, until the installer
     // closes it to replace its files. An installer that gives up instead (a
     // refused UAC prompt, Cancel) hands this launch back.
@@ -131,6 +166,7 @@ bool Updater::installPending() {
         return true;
     delete installer;
     return false;
+#endif
 }
 
 void Updater::check() {
@@ -162,7 +198,7 @@ void Updater::check() {
             return;
         }
         m_path = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                     .filePath(QString("Drift-setup-%1.exe").arg(release.version));
+                     .filePath(QString("Drift-%1-").arg(release.version) + kInstaller);
         // Downloaded and checked by an earlier run; install() checks it once more.
         const QSettings settings;
         if (settings.value("update/installer").toString() == m_path
@@ -245,7 +281,12 @@ void Updater::install() {
         return;
     }
     QSettings().setValue("update/attempted", m_release.version);
-    if (QProcess::startDetached(m_path, arguments()))
+#ifdef Q_OS_MACOS
+    const bool started = replaceBundle(m_path);
+#else
+    const bool started = QProcess::startDetached(m_path, arguments());
+#endif
+    if (started)
         QCoreApplication::quit();
     else
         offer(false);

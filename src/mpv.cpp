@@ -47,7 +47,11 @@ Mpv::Mpv(const QString &program, QObject *parent) : QObject(parent), m_program(p
     connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
             m_retry.stop();
+#ifdef Q_OS_MACOS
+            emit failed(tr("mpv isn't installed. Install it with: brew install mpv"));
+#else
             emit failed(tr("mpv isn't installed. Install it with: omarchy-pkg-add mpv"));
+#endif
         }
     });
     connect(&m_process, &QProcess::finished, this, [this] {
@@ -84,6 +88,10 @@ void Mpv::start() {
         // Not --load-console: mpv before 0.40 refuses that name and won't start.
         "--load-scripts=no", "--osc=no", "--load-stats-overlay=no", "--load-auto-profiles=no",
         "--input-ipc-server=" + m_socketPath,
+#ifdef Q_OS_MACOS
+        // mpv would take the media keys itself; they are Drift's, through NowPlaying.
+        "--input-media-keys=no",
+#endif
     });
     m_attempts = 0;
     m_retry.start();

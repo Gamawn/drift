@@ -25,8 +25,8 @@ Translator::Translator(const QString &languageFile, const QString &catalogDirect
 QString Translator::readLanguage(const QString &path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-#ifdef Q_OS_WIN
-        // Windows has no Omarchy language setting; follow the system's language.
+#ifndef Q_OS_LINUX
+        // Windows and macOS have no Omarchy language setting; follow the system's language.
         return QLocale::system().name().section('_', 0, 0);
 #else
         return "en";

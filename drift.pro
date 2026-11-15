@@ -1,7 +1,6 @@
 QT += core gui network qml quick quickcontrols2
 
 CONFIG += c++17 release
-CONFIG -= app_bundle # macOS: a plain build/drift binary, as on Linux
 TARGET = drift
 TEMPLATE = app
 
@@ -43,6 +42,18 @@ linux {
     QT += dbus
     HEADERS += src/mpris.h
     SOURCES += src/mpris.cpp
+}
+
+# macOS: build/Drift.app, with the media keys and Control Center's Now Playing.
+macx {
+    TARGET = Drift
+    ICON = pkgbuild/drift.icns
+    QMAKE_INFO_PLIST = macos/Info.plist
+    VERSION = $$system(sed -n 's/^pkgver=//p' $$PWD/pkgbuild/PKGBUILD)
+    HEADERS += src/nowplaying.h
+    SOURCES += src/nowplaying.mm
+    QMAKE_CXXFLAGS += -fobjc-arc # nowplaying.mm; plain C++ ignores it
+    LIBS += -framework MediaPlayer -framework AppKit
 }
 
 DISTFILES += \

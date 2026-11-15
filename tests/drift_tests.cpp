@@ -158,21 +158,26 @@ private slots:
 
     void updaterReadsAGitHubRelease()
     {
+#ifdef Q_OS_MACOS
+        const QByteArray asset = "Drift-macos.dmg";
+#else
+        const QByteArray asset = "Drift-setup-x64.exe";
+#endif
         // @ for the site: moc takes the two slashes of a URL in a raw string for a comment.
         const auto release = Updater::parseRelease(QByteArray(R"json({"tag_name": "v0.4.0",
             "html_url": "@/tag/v0.4.0", "assets": [
-            {"name": "Drift-setup-x64.exe", "digest": "sha256:HASH", "browser_download_url": "@/download/v0.4.0/Drift-setup-x64.exe"},
+            {"name": "ASSET", "digest": "sha256:HASH", "browser_download_url": "@/download/v0.4.0/ASSET"},
             {"name": "Drift-windows-x64.zip", "digest": "sha256:00", "browser_download_url": "@/download/v0.4.0/Drift-windows-x64.zip"}
-        ]})json").replace("@", "https://github.com/Gamawn/drift/releases").replace("HASH", QByteArray(64, 'A')));
+        ]})json").replace("@", "https://github.com/Gamawn/drift/releases").replace("ASSET", asset).replace("HASH", QByteArray(64, 'A')));
         QCOMPARE(release.version, QString("0.4.0"));
         QVERIFY(release.page.toString().endsWith("/tag/v0.4.0"));
-        QVERIFY(release.installer.toString().endsWith("/v0.4.0/Drift-setup-x64.exe"));
+        QVERIFY(release.installer.toString().endsWith("/v0.4.0/" + asset));
         QCOMPARE(release.sha256, QByteArray(64, 'a'));
 
         // Nothing is downloaded from outside Drift's own releases, and a tag never becomes a path.
         const auto odd = Updater::parseRelease(QByteArray(R"json({"tag_name": "v1.0/../evil", "html_url": "@/", "assets": [
-            {"name": "Drift-setup-x64.exe", "digest": "sha256:HASH", "browser_download_url": "@/Drift-setup-x64.exe"}
-        ]})json").replace("@", "https://example.com").replace("HASH", QByteArray(64, 'a')));
+            {"name": "ASSET", "digest": "sha256:HASH", "browser_download_url": "@/ASSET"}
+        ]})json").replace("@", "https://example.com").replace("ASSET", asset).replace("HASH", QByteArray(64, 'a')));
         QCOMPARE(odd.version, QString("1.0"));
         QVERIFY(odd.installer.isEmpty());
         QCOMPARE(odd.page, QUrl("https://github.com/Gamawn/drift/releases/latest"));
@@ -180,8 +185,8 @@ private slots:
 
         // Without GitHub's hash of it the installer isn't taken.
         const auto unhashed = Updater::parseRelease(QByteArray(R"json({"tag_name": "v0.4.0", "assets": [
-            {"name": "Drift-setup-x64.exe", "browser_download_url": "@/download/v0.4.0/Drift-setup-x64.exe"}
-        ]})json").replace("@", "https://github.com/Gamawn/drift/releases"));
+            {"name": "ASSET", "browser_download_url": "@/download/v0.4.0/ASSET"}
+        ]})json").replace("ASSET", asset).replace("@", "https://github.com/Gamawn/drift/releases"));
         QVERIFY(unhashed.installer.isEmpty());
     }
 
@@ -586,6 +591,10 @@ private slots:
 
     void themeFollowsHyprlandRounding()
     {
+#ifndef Q_OS_LINUX
+        // macOS' file watcher also reports the fake hyprctl's folder, an extra query Hyprland never sees.
+        QSKIP("Hyprland is Linux only");
+#endif
         QTemporaryDir dir, themeDir;
         const QString response = dir.filePath("response.json"), command = dir.filePath("hyprctl");
         auto write = [](const QString &path, const QByteArray &data) {
