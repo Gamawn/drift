@@ -165,7 +165,10 @@ jobs:
           export PATH="$PWD/Qt/6.8.3/macos/bin:$PATH"
           mkdir -p build/dmg
           cd build
-          qmake ../drift.pro QMAKE_APPLE_DEVICE_ARCHS="x86_64 arm64"
+          # Qt up to 6.10 calls __yield() without arm_acle.h, which the runner's Xcode
+          # makes an error; it is a compiler builtin either way.
+          qmake ../drift.pro QMAKE_APPLE_DEVICE_ARCHS="x86_64 arm64" \
+            QMAKE_CXXFLAGS+=-Wno-error=implicit-function-declaration
           make -j"$(sysctl -n hw.ncpu)"
           # Signed ad hoc: Apple silicon runs nothing unsigned, and there is no developer ID.
           macdeployqt Drift.app -qmldir=../src -codesign=-
