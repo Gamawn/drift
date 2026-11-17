@@ -18,6 +18,10 @@
 #include <malloc.h>
 #include "mpris.h"
 #endif
+#ifdef Q_OS_MACOS
+#include <QFileOpenEvent>
+#include "nowplaying.h"
+#endif
 #include "process.h"
 #ifdef Q_OS_WIN
 #include <QApplication>
@@ -33,7 +37,27 @@
 #include "translator.h"
 #include "updater.h"
 
+#ifdef Q_OS_MACOS
+// macOS hands a drift:// link to the running Drift as an event, not to a second launch.
+struct LinkFilter : QObject {
+    Backend *backend;
+    bool eventFilter(QObject *, QEvent *event) override {
+        if (event->type() != QEvent::FileOpen)
+            return false;
+        const QString id = Backend::linkId(static_cast<QFileOpenEvent *>(event)->url().toString());
+        if (!id.isEmpty())
+            backend->playId(id);
+        return true;
+    }
+};
+#endif
+
 int main(int argc, char *argv[]) {
+#ifdef Q_OS_MACOS
+    // An app opened from Finder or the Dock gets a PATH without Homebrew, where
+    // mpv, yt-dlp and the JavaScript runtime yt-dlp calls live.
+    qputenv("PATH", "/opt/homebrew/bin:/usr/local/bin:" + qgetenv("PATH"));
+#endif
 #ifdef Q_OS_LINUX
     // Omarchy sets QT_QPA_PLATFORMTHEME=gtk3, which loads all of GTK (6 threads, ~18 MB)
     // only to hand us a font; Material and the Omarchy accent replace the rest.
@@ -175,6 +199,17 @@ int main(int argc, char *argv[]) {
     });
 #ifdef Q_OS_LINUX
     Mpris mpris(&backend, show, [] { QCoreApplication::quit(); });
+#endif
+#ifdef Q_OS_MACOS
+    NowPlaying nowPlaying(&backend);
+    LinkFilter links;
+    links.backend = &backend;
+    app.installEventFilter(&links);
+    // A click on the Dock icon, the way back to a closed window, activates Drift.
+    QObject::connect(&app, &QGuiApplication::applicationStateChanged, &app, [&](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive && !(window() && window()->isVisible()))
+            show();
+    });
 #endif
 #ifdef Q_OS_WIN
     Smtc smtc(&backend);

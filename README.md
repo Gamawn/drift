@@ -39,7 +39,9 @@ playing the track Drift quit on, from the same second, and its radio after it.
 
 On Linux Drift is an MPRIS player, so the keyboard's media keys, `playerctl`,
 and Omarchy's media bar widget play, pause, and skip without switching to it.
-On Windows the media keys and the media flyout do the same.
+On Windows the media keys and the media flyout do the same, and on macOS the
+media keys and Control Center's Now Playing. On macOS a click on Drift's Dock
+icon brings a closed window back.
 
 ## Build
 
@@ -50,6 +52,21 @@ bin/install    # makepkg -fsi, adds Drift to the app launcher
 ```
 
 Needs `mpv` and `yt-dlp`. The playlist must be public or unlisted.
+
+## macOS
+
+`bin/build` makes `build/Drift.app`. The `Release` workflow builds
+`Drift-macos.dmg` for Intel and Apple silicon; drag Drift to Applications and
+install the two programs it drives:
+
+```sh
+brew install mpv yt-dlp
+```
+
+The app isn't notarized, so the first launch of a downloaded copy has to be
+allowed in System Settings → Privacy & Security → Open Anyway (or
+`xattr -dr com.apple.quarantine /Applications/Drift.app`). After that Drift
+updates itself from new releases. It follows the macOS language.
 
 ## Windows
 

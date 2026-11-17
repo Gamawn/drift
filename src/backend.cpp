@@ -108,7 +108,11 @@ Backend::Backend(const QString &ytdlp, const QString &mpv, QObject *parent)
             return;
         m_loadingPlaylist = false;
         setStatus({});
+#ifdef Q_OS_MACOS
+        setError(tr("yt-dlp isn't installed. Install it with: brew install yt-dlp"));
+#else
         setError(tr("yt-dlp isn't installed. Install it with: omarchy-pkg-add yt-dlp"));
+#endif
     });
 
     connect(&m_resolve, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {

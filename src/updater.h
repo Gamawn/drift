@@ -9,8 +9,9 @@ class QNetworkAccessManager;
 // Follows Drift's releases on GitHub. A copy put there by the Windows installer
 // downloads the newer installer in the background, checks it against the
 // SHA-256 GitHub publishes for it and runs it when asked, or on the next
-// launch. Anything else (the portable zip, a package) only says that a newer
-// version is out.
+// launch. A Drift.app on macOS does the same with the disk image, swapping
+// itself for the Drift.app inside. Anything else (the portable zip, a package)
+// only says that a newer version is out.
 class Updater : public QObject {
     Q_OBJECT
     // The newer version on offer; empty while there is nothing to show.
