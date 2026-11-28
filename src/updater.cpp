@@ -23,9 +23,9 @@
 #include <utility>
 
 namespace {
-const char kLatest[] = "https://api.github.com/repos/Gamawn/drift/releases/latest";
+const char kLatest[] = "https://api.github.com/repos/audio-drift/drift/releases/latest";
 // Anything a release points to outside of this is ignored.
-const char kReleases[] = "https://github.com/Gamawn/drift/releases/";
+const char kReleases[] = "https://github.com/audio-drift/drift/releases/";
 #ifdef Q_OS_MACOS
 const char kInstaller[] = "Drift-macos.dmg";
 #else

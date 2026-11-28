@@ -144,7 +144,7 @@ private slots:
         // The first button's page turns into a drift:// link the viewer's own Drift opens.
         const QJsonArray buttons = activity.value("buttons").toArray();
         QCOMPARE(buttons.size(), 2);
-        QCOMPARE(buttons.at(0).toObject().value("url").toString(), QString("https://gamawn.github.io/drift/?v=pRpeEdMmmQ0"));
+        QCOMPARE(buttons.at(0).toObject().value("url").toString(), QString("https://audio-drift.github.io/drift/?v=pRpeEdMmmQ0"));
         QCOMPARE(buttons.at(1).toObject().value("url").toString(), QString("https://music.youtube.com/watch?v=pRpeEdMmmQ0"));
 
         // Discord refuses text under 2 or over 128 characters, and an empty state.
@@ -168,7 +168,7 @@ private slots:
             "html_url": "@/tag/v0.4.0", "assets": [
             {"name": "ASSET", "digest": "sha256:HASH", "browser_download_url": "@/download/v0.4.0/ASSET"},
             {"name": "Drift-windows-x64.zip", "digest": "sha256:00", "browser_download_url": "@/download/v0.4.0/Drift-windows-x64.zip"}
-        ]})json").replace("@", "https://github.com/Gamawn/drift/releases").replace("ASSET", asset).replace("HASH", QByteArray(64, 'A')));
+        ]})json").replace("@", "https://github.com/audio-drift/drift/releases").replace("ASSET", asset).replace("HASH", QByteArray(64, 'A')));
         QCOMPARE(release.version, QString("0.4.0"));
         QVERIFY(release.page.toString().endsWith("/tag/v0.4.0"));
         QVERIFY(release.installer.toString().endsWith("/v0.4.0/" + asset));
@@ -180,13 +180,13 @@ private slots:
         ]})json").replace("@", "https://example.com").replace("ASSET", asset).replace("HASH", QByteArray(64, 'a')));
         QCOMPARE(odd.version, QString("1.0"));
         QVERIFY(odd.installer.isEmpty());
-        QCOMPARE(odd.page, QUrl("https://github.com/Gamawn/drift/releases/latest"));
+        QCOMPARE(odd.page, QUrl("https://github.com/audio-drift/drift/releases/latest"));
         QVERIFY(Updater::parseRelease("rate limited").version.isEmpty());
 
         // Without GitHub's hash of it the installer isn't taken.
         const auto unhashed = Updater::parseRelease(QByteArray(R"json({"tag_name": "v0.4.0", "assets": [
             {"name": "ASSET", "browser_download_url": "@/download/v0.4.0/ASSET"}
-        ]})json").replace("ASSET", asset).replace("@", "https://github.com/Gamawn/drift/releases"));
+        ]})json").replace("ASSET", asset).replace("@", "https://github.com/audio-drift/drift/releases"));
         QVERIFY(unhashed.installer.isEmpty());
     }
 

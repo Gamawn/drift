@@ -11,8 +11,8 @@
 AppId={{E6F55BF0-6E27-4872-BF12-9B9A1E285640}
 AppName=Drift
 AppVersion={#AppVersion}
-AppPublisher=Gamawn
-AppPublisherURL=https://github.com/Gamawn/drift
+AppPublisher=audio-drift
+AppPublisherURL=https://github.com/audio-drift/drift
 DefaultDirName={autopf}\Drift
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest

@@ -87,7 +87,7 @@ QJsonObject Discord::activity(const QVariantMap &track, int position, int durati
         // Discord takes two buttons at most, and only web links: the first is docs/index.html,
         // which passes the track on to the viewer's own Drift as drift://play/<id>.
         {"buttons", QJsonArray{QJsonObject{{"label", "Listen in Drift"},
-                                           {"url", "https://gamawn.github.io/drift/?v=" + id}},
+                                           {"url", "https://audio-drift.github.io/drift/?v=" + id}},
                                QJsonObject{{"label", "Listen on YouTube Music"},
                                            {"url", "https://music.youtube.com/watch?v=" + id}}}},
     };
